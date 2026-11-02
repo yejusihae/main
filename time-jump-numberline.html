@@ -224,6 +224,7 @@ legend { font-weight: 800; font-size: 22px; padding: 0 6px; }
 #line .dot.hollow { fill: var(--surface); stroke: var(--ink); stroke-width: 4; }
 #line .nowring { fill: none; stroke: var(--accent); stroke-width: 4; }
 #line .ringhl { fill: none; stroke: var(--accent); stroke-width: 6; }
+#line .leader { stroke: var(--line); stroke-width: 2; stroke-dasharray: 3 3; }
 #line .arc { fill: none; stroke: var(--jump); stroke-width: 4; stroke-linecap: round; }
 #line .head { fill: var(--jump); }
 #line.emph .arc { opacity: .3; }
@@ -850,24 +851,55 @@ function renderLine() {
   if (!S.q) return;
   const M = lineModel(), q = S.q;
   const cw = Math.max(280, wrap.clientWidth || 640);
-  const ts = [...M.pts.keys()].sort((a, b) => a - b), n = ts.length;
-  const idx = new Map(ts.map((t, i) => [t, i]));
-  const minGap = M.sec ? 150 : 118, padX = M.sec ? 84 : 70;
-  const W = Math.max(cw, padX * 2 + Math.max(0, n - 1) * minGap);
-  const gap = n > 1 ? (W - padX * 2) / (n - 1) : 0;
-  const xOf = t => (n > 1 ? padX + idx.get(t) * gap : W / 2);
+  /* 점 사이 거리는 시간 길이에 비례한다. 아주 짧은 점프도 보이도록 최소 폭만 둔다. */
+  const ts = [...M.pts.keys()].sort((x, y) => x - y), n = ts.length;
+  const lay = [...new Set([...ts, S.sol.anchor, S.sol.anchor + S.sol.total])].sort((x, y) => x - y);
+  const gaps = lay.slice(1).map((t, i) => t - lay[i]);
+  const padX = 76, MINW = 34;
+  const widthAt = k => gaps.reduce((acc, d) => acc + Math.max(MINW, d * k), 0);
+  let avail = cw - padX * 2;
+  if (gaps.length * MINW > avail * 0.75) avail = gaps.length * MINW * 2;
+  let kLo = 0, kHi = gaps.length ? avail / Math.min(...gaps) : 1;
+  for (let it = 0; it < 40; it++) { const mid = (kLo + kHi) / 2; if (widthAt(mid) <= avail) kLo = mid; else kHi = mid; }
+  const xs = new Map();
+  let xc = padX;
+  lay.forEach((t, i) => { if (i) xc += Math.max(MINW, gaps[i - 1] * kLo); xs.set(t, xc); });
+  if (lay.length === 1) xs.set(lay[0], cw / 2);
+  const W = Math.max(cw, xc + padX);
+  const xOf = t => xs.get(t);
+  const textW = (str, size) => [...String(str)].reduce((acc, ch) => acc + (/[가-힣]/.test(ch) ? size * 0.96 : size * 0.6), 0);
 
+  /* 점프 화살: 겹치는 화살은 층을 올리고, 라벨이 겹치면 위로 비켜 놓는다 */
   const arcs = [];
   S.jumps.forEach((j, i) => {
-    const a = idx.get(M.path[i]), b = idx.get(M.path[i + 1]);
-    if (a == null || b == null || a === b) return;
-    const lo = Math.min(a, b), hi = Math.max(a, b);
-    let L = 0; while (arcs.some(o => o.L === L && o.lo < hi && lo < o.hi)) L++;
-    const sp = hi - lo;
-    arcs.push({ i, j, a, b, lo, hi, L, ah: 36 + Math.min(34, gap * sp * .09) + 30 * L + 10 * (sp - 1), from: M.path[i], to: M.path[i + 1] });
+    const from = M.path[i], to = M.path[i + 1];
+    if (!xs.has(from) || !xs.has(to) || from === to) return;
+    const x1 = xOf(from), x2 = xOf(to), lo = Math.min(x1, x2), hi = Math.max(x1, x2);
+    let L = 0; while (arcs.some(o => o.L === L && o.lo < hi - 1 && lo < o.hi - 1)) L++;
+    const ah = Math.min(72, 18 + (hi - lo) * 0.2) + 30 * L;
+    arcs.push({ i, j, x1, x2, lo, hi, L, ah, from, to, label: fmtSigned(j.d) });
   });
-  const maxAh = arcs.length ? Math.max(...arcs.map(o => o.ah)) : 40;
-  const lineY = 26 + maxAh + 16, H = lineY + 80;
+  const boxes = [];
+  arcs.forEach(o => {
+    const w = textW(o.label, 21) + 8, mx = (o.x1 + o.x2) / 2;
+    let rel = 13 + o.ah + 9;                       /* 수직선에서 라벨 글자 바닥까지의 높이 */
+    while (boxes.some(b => b.l < mx + w / 2 && mx - w / 2 < b.r && Math.abs(b.rel - rel) < 24)) rel += 25;
+    boxes.push({ l: mx - w / 2, r: mx + w / 2, rel });
+    o.lrel = rel;
+  });
+  const maxTop = Math.max(40, ...arcs.map(o => o.lrel + 20));
+  const lineY = maxTop + 12;
+
+  /* 점 아래 시각 라벨: 겹치면 아래 줄로 내린다 */
+  const rows = [];
+  const dotRow = new Map();
+  [...M.pts.values()].filter(p => p.label != null).sort((x, y) => x.t - y.t).forEach(p => {
+    const w = (p.label === '?' ? 58 : Math.max(textW(p.label, 21), 40)) + 12, x = xOf(p.t);
+    let r = 0; while ((rows[r] || []).some(b => b.l < x + w / 2 && x - w / 2 < b.r)) r++;
+    (rows[r] = rows[r] || []).push({ l: x - w / 2, r: x + w / 2 });
+    dotRow.set(p.t, r);
+  });
+  const H = lineY + 80 + Math.max(0, rows.length - 1) * 54;
 
   const st = S.fbState, lvl = st ? st.level : 0, emph = lvl >= 2;
   const hlSet = new Set();
@@ -885,26 +917,29 @@ function renderLine() {
   if (!n) g += `<text class="empty" x="${W / 2}" y="${lineY - 16}">${q.mark === 'student' ? '아래 버튼을 눌러 두 시각을 점으로 찍어요' : '점프를 만들면 여기에 그려져요'}</text>`;
 
   arcs.forEach(o => {
-    const x1 = xOf(M.path[o.i]), x2 = xOf(M.path[o.i + 1]), y0 = lineY - 13;
-    const mx = (x1 + x2) / 2, cy = y0 - 2 * o.ah, apexY = y0 - o.ah;
+    const x1 = o.x1, x2 = o.x2, y0 = lineY - 13;
+    const mx = (x1 + x2) / 2, cy = y0 - 2 * o.ah;
     let ux = x2 - mx, uy = y0 - cy; const ul = Math.hypot(ux, uy) || 1; ux /= ul; uy /= ul;
-    const bx = x2 - ux * 17, by = y0 - uy * 17, nx = -uy * 8, ny = ux * 8;
+    const hs = Math.min(16, (o.hi - o.lo) * 0.45), bx = x2 - ux * hs, by = y0 - uy * hs, nx = -uy * hs * 0.48, ny = ux * hs * 0.48;
     const isNew = S.newArc && o.i === S.jumps.length - 1, play = S.playIdx === o.i, hl = emph && anyHl && hlSet.has(o.i);
     const cls = `${isNew ? ' new' : ''}${play ? ' play' : ''}${hl ? ' hl' : ''}`;
     const style = isNew ? ` style="--dur:${jumpMs(o.j.d)}ms"` : '';
+    const ly = lineY - o.lrel, apexY = y0 - o.ah;
+    const leader = ly < apexY - 30 ? `<line class="leader" x1="${mx.toFixed(1)}" y1="${(ly + 5).toFixed(1)}" x2="${mx.toFixed(1)}" y2="${(apexY - 3).toFixed(1)}"/>` : '';
     g += `<g${style}><path class="arc${cls}" pathLength="1" d="M${x1.toFixed(1)} ${y0} Q${mx.toFixed(1)} ${cy.toFixed(1)} ${x2.toFixed(1)} ${y0}"/>`
       + `<polygon class="head${cls}" points="${x2.toFixed(1)},${y0 + 2} ${(bx + nx).toFixed(1)},${(by + ny).toFixed(1)} ${(bx - nx).toFixed(1)},${(by - ny).toFixed(1)}"/>`
-      + `<text class="jl${hl ? ' hl' : ''}" x="${mx.toFixed(1)}" y="${(apexY - 9).toFixed(1)}">${esc(fmtSigned(o.j.d))}</text></g>`;
+      + leader + `<text class="jl${hl ? ' hl' : ''}" x="${mx.toFixed(1)}" y="${ly.toFixed(1)}">${esc(o.label)}</text></g>`;
   });
 
   M.pts.forEach(p => {
     const x = xOf(p.t);
-    if (p.now) g += `<circle class="nowring" cx="${x}" cy="${lineY}" r="19"/>`;
-    if (emph && st && st.type === 'order' && (p.role === 'anchor' || p.role === 'given')) g += `<circle class="ringhl" cx="${x}" cy="${lineY}" r="24"/>`;
-    const labeled = p.label != null;
-    g += `<circle class="dot${p.hollow ? ' hollow' : labeled ? '' : ' plain'}" cx="${x}" cy="${lineY}" r="${labeled ? 11 : 7}"/>`;
-    if (p.label === '?') g += `<rect class="qbox" x="${x - 27}" y="${lineY + 24}" width="54" height="50" rx="10"/><text class="qm" x="${x}" y="${lineY + 59}">?</text>`;
-    else if (labeled) g += `<text class="ap" x="${x}" y="${lineY + 38}">${clockParts(p.t).ap}</text><text class="tl" x="${x}" y="${lineY + 62}">${esc(p.label)}</text>`;
+    if (p.now) g += `<circle class="nowring" cx="${x}" cy="${lineY}" r="17"/>`;
+    if (emph && st && st.type === 'order' && (p.role === 'anchor' || p.role === 'given')) g += `<circle class="ringhl" cx="${x}" cy="${lineY}" r="23"/>`;
+    const labeled = p.label != null, dy = (dotRow.get(p.t) || 0) * 54;
+    g += `<circle class="dot${p.hollow ? ' hollow' : labeled ? '' : ' plain'}" cx="${x}" cy="${lineY}" r="${labeled ? 10 : 6}"/>`;
+    if (dy) g += `<line class="leader" x1="${x}" y1="${lineY + 14}" x2="${x}" y2="${lineY + dy + 22}"/>`;
+    if (p.label === '?') g += `<rect class="qbox" x="${x - 27}" y="${lineY + 24 + dy}" width="54" height="50" rx="10"/><text class="qm" x="${x}" y="${lineY + 59 + dy}">?</text>`;
+    else if (labeled) g += `<text class="ap" x="${x}" y="${lineY + 38 + dy}">${clockParts(p.t).ap}</text><text class="tl" x="${x}" y="${lineY + 62 + dy}">${esc(p.label)}</text>`;
   });
 
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
