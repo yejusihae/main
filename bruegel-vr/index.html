@@ -24,10 +24,6 @@
     brown: 0x6b4a2b, dark: 0x3a2c22, pink: 0xc98a73, grey: 0x8c857a,
     skin: 0xe3b48f, skin2: 0xd9a27c, wood: 0x8a6239, hay: 0xd6b765,
   };
-  const SHIRTS = [PAL.red, PAL.blue, PAL.green, PAL.ochre, PAL.white, PAL.brown, PAL.vermilion, PAL.slate, PAL.olive, PAL.pink, PAL.grey];
-  const LEGS = [PAL.red, PAL.blue, PAL.dark, PAL.brown, PAL.grey, PAL.white, PAL.green];
-  const CAPS = [PAL.white, PAL.dark, PAL.red, PAL.blue, PAL.brown, PAL.white, PAL.white];
-
   const matCache = {};
   function mat(c) {
     return matCache[c] || (matCache[c] = new THREE.MeshLambertMaterial({ color: c, flatShading: true }));
@@ -38,89 +34,66 @@
   function rnd() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
   function pick(a) { return a[Math.floor(rnd() * a.length)]; }
 
-  /* ---------- 공유 지오메트리 ---------- */
-  const GEO = {
-    leg: new THREE.CylinderGeometry(0.055, 0.05, 0.42, 6).translate(0, -0.21, 0),
-    shoe: new THREE.BoxGeometry(0.09, 0.05, 0.15).translate(0, -0.43, 0.03),
-    arm: new THREE.CylinderGeometry(0.045, 0.038, 0.36, 6).translate(0, -0.18, 0),
-    hand: new THREE.SphereGeometry(0.042, 6, 5).translate(0, -0.38, 0),
-    torso: new THREE.CylinderGeometry(0.12, 0.17, 0.46, 8).translate(0, 0.23, 0),
-    dress: new THREE.CylinderGeometry(0.14, 0.29, 0.5, 10).translate(0, -0.2, 0),
-    apron: new THREE.BoxGeometry(0.22, 0.42, 0.02).translate(0, -0.15, 0.2),
-    head: new THREE.SphereGeometry(0.11, 10, 8).translate(0, 0.1, 0),
-    cap: new THREE.SphereGeometry(0.118, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).translate(0, 0.12, -0.005),
-    hood: new THREE.SphereGeometry(0.128, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.62).translate(0, 0.1, -0.02),
-    hat: new THREE.CylinderGeometry(0.07, 0.13, 0.08, 10).translate(0, 0.23, 0),
-    band: new THREE.CylinderGeometry(0.113, 0.113, 0.04, 12).translate(0, 0.12, 0),
-  };
-
-  /* ---------- 아이 한 명 ----------
-     원점 = 발밑, 얼굴은 +z 방향. 키 약 1.15m
-     관절: hips(골반) → spine(몸통) → neck(머리) / armA(+x) armB(-x) / legA(+x) legB(-x)        */
-  function makeChild(o = {}) {
-    const girl = o.girl != null ? o.girl : rnd() < 0.45;
-    const shirt = o.shirt != null ? o.shirt : pick(SHIRTS);
-    const legC = o.legs != null ? o.legs : pick(LEGS);
-    const skin = rnd() < 0.5 ? PAL.skin : PAL.skin2;
-    const capC = o.cap != null ? o.cap : (girl ? PAL.white : pick(CAPS));
-    const s = o.scale || (0.9 + rnd() * 0.2);
-
-    const root = new THREE.Group();
-    const body = new THREE.Group(); body.scale.setScalar(s); root.add(body);
-    const hips = new THREE.Group(); hips.position.y = 0.46; body.add(hips);
-    const spine = new THREE.Group(); hips.add(spine);
-    spine.add(new THREE.Mesh(GEO.torso, mat(shirt)));
-
-    function limb(geo, extra, color, x, y, parent) {
-      const g = new THREE.Group(); g.position.set(x, y, 0);
-      g.add(new THREE.Mesh(geo, mat(color)));
-      if (extra) g.add(new THREE.Mesh(extra, mat(extra === GEO.shoe ? PAL.dark : skin)));
-      parent.add(g); return g;
-    }
-    const legA = limb(GEO.leg, GEO.shoe, legC, 0.07, 0, hips);
-    const legB = limb(GEO.leg, GEO.shoe, legC, -0.07, 0, hips);
-    const sleeve = o.sleeve != null ? o.sleeve : (rnd() < 0.3 ? PAL.white : shirt);
-    const armA = limb(GEO.arm, GEO.hand, sleeve, 0.16, 0.42, spine);
-    const armB = limb(GEO.arm, GEO.hand, sleeve, -0.16, 0.42, spine);
-
-    if (girl) {
-      const d = new THREE.Mesh(GEO.dress, mat(o.dress != null ? o.dress : pick([PAL.red, PAL.blue, PAL.green, PAL.brown, PAL.slate, PAL.vermilion])));
-      hips.add(d);
-      if (rnd() < 0.6) hips.add(new THREE.Mesh(GEO.apron, mat(PAL.white)));
-    }
-    const neck = new THREE.Group(); neck.position.y = 0.46; spine.add(neck);
-    neck.add(new THREE.Mesh(GEO.head, mat(skin)));
-    if (girl) neck.add(new THREE.Mesh(GEO.hood, mat(capC)));
-    else {
-      neck.add(new THREE.Mesh(GEO.cap, mat(capC)));
-      if (rnd() < 0.25) neck.add(new THREE.Mesh(GEO.hat, mat(pick([PAL.dark, PAL.brown, PAL.red]))));
-    }
-    if (o.blindfold) neck.add(new THREE.Mesh(GEO.band, mat(PAL.white)));
-
-    return { root, body, hips, spine, neck, armA, armB, legA, legB, s, girl };
-  }
-
-  /* 기본 동작 */
-  function walkPose(c, t, speed = 1, amp = 0.55) {
-    const w = Math.sin(t * 7 * speed);
-    c.legA.rotation.x = w * amp; c.legB.rotation.x = -w * amp;
-    c.armA.rotation.x = -w * amp * 0.8; c.armB.rotation.x = w * amp * 0.8;
-    c.body.position.y = Math.abs(Math.cos(t * 7 * speed)) * 0.03;
-  }
-  function sitPose(c, ground = 0) {
-    c.legA.rotation.x = c.legB.rotation.x = -Math.PI / 2;
-    c.body.position.y = -0.4 * c.s + ground;
-  }
-  function kneelPose(c) {
-    c.legA.rotation.x = c.legB.rotation.x = Math.PI / 2.4;
-    c.body.position.y = -0.3 * c.s;
-  }
-  function faceAlong(obj, dx, dz) { obj.rotation.y = Math.atan2(dx, dz); }
-
   /* ---------- 작은 도구들 ---------- */
   function mesh(geo, color, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(geo, mat(color)); m.position.set(x, y, z); return m; }
   function stick(len, color = PAL.wood, r = 0.018) { return new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 5), mat(color)); }
-  function attachToHand(arm, obj) { obj.position.y += -0.38; arm.add(obj); return obj; }
+
+  /* =========================================================================
+     그림 속 아이들: 원화(1560, 퍼블릭 도메인)에서 한 명씩 오려 낸 컷아웃.
+     figures.webp 한 장(아틀라스)에 모두 들어 있고, 언제나 관람자를 향해 선다.
+     ATLAS[이름] = [u, v(위), 폭, 높이, 가로/세로 비]
+     ========================================================================= */
+  const ATLAS = {"knuckle_a":[0.0,0.0,0.09229,0.28672,0.515],"barrel":[0.09521,0.0,0.11377,0.28203,0.6454],"bladder":[0.21191,0.0,0.08447,0.28125,0.4806],"hood_b":[0.29932,0.0,0.06689,0.27813,0.3848],"hood_a":[0.36914,0.0,0.08057,0.275,0.4688],"hoop_girl":[0.45264,0.0,0.12549,0.27422,0.7322],"hoop_boy":[0.58105,0.0,0.12158,0.27188,0.7155],"joust_a":[0.70557,0.0,0.21777,0.25391,1.3723],"joust_b":[0.0,0.29141,0.1709,0.23984,1.1401],"wedding":[0.17383,0.29141,0.18408,0.2375,1.2401],"leap_pair":[0.36084,0.29141,0.104,0.225,0.7396],"blind_girl":[0.46777,0.29141,0.08936,0.22109,0.6466],"blind_boy":[0.56006,0.29141,0.09912,0.21797,0.7276],"knuckle_b":[0.66211,0.29141,0.16748,0.21328,1.2564],"walk_couple":[0.83252,0.29141,0.12646,0.21016,0.9628],"handstand":[0.0,0.53594,0.08398,0.20078,0.6693],"leap_run":[0.08691,0.53594,0.09424,0.2,0.7539],"stick_boy":[0.18408,0.53594,0.05566,0.19766,0.4506],"piggyback":[0.24268,0.53594,0.13965,0.18906,1.1818],"basket_girls":[0.38525,0.53594,0.16162,0.1875,1.3792],"blind_it":[0.5498,0.53594,0.08057,0.1875,0.6875],"crouch_girl":[0.6333,0.53594,0.08936,0.1875,0.7625],"fence_sit":[0.72559,0.53594,0.12451,0.1875,1.0625],"hobby_b":[0.85303,0.53594,0.11523,0.1875,0.9833],"marbles":[0.0,0.74141,0.11914,0.1875,1.0167],"pinwheel":[0.12207,0.74141,0.05566,0.1875,0.475],"rail_flip":[0.18066,0.74141,0.08887,0.1875,0.7583],"stilts":[0.27246,0.74141,0.0542,0.1875,0.4625],"tops_pair":[0.32959,0.74141,0.09717,0.1875,0.8292],"tops_whip":[0.42969,0.74141,0.04736,0.1875,0.4042],"tree_climb":[0.47998,0.74141,0.04199,0.1875,0.3583],"spin_a":[0.5249,0.74141,0.11523,0.125,1.475],"swim_sit":[0.64307,0.74141,0.0625,0.12188,0.8205],"spin_b":[0.7085,0.74141,0.11035,0.11563,1.527],"swim_float":[0.82178,0.74141,0.10645,0.06719,2.5349]};
+  const FIG_TEX = new THREE.TextureLoader().load('figures.webp');
+  FIG_TEX.colorSpace = THREE.SRGBColorSpace; FIG_TEX.anisotropy = 4;
+  const FIG_MAT = new THREE.MeshBasicMaterial({ map: FIG_TEX, alphaTest: 0.45, alphaToCoverage: true, side: THREE.DoubleSide });
+  const SHADOW_MAT = new THREE.MeshBasicMaterial({ color: 0x2a1d12, transparent: true, opacity: 0.28, depthWrite: false });
+  const SHADOW_GEO = new THREE.CircleGeometry(0.5, 16).rotateX(-Math.PI / 2);
+  const FIGURES = [];
+
+  /* 그림 인물 하나. 원점 = 발밑.
+     root(위치) → bb(관람자 쪽으로 회전) → sprite(흔들기·뒤집기) → 메시
+     faces: 그림에서 인물이 보는 쪽(+1 오른쪽, -1 왼쪽). 움직이는 방향에 맞춰 좌우를 뒤집는다. */
+  function figure(name, h, o = {}) {
+    const [u, v, w, hh, asp] = ATLAS[name];
+    const W = h * asp;
+    const geo = new THREE.PlaneGeometry(W, h).translate(0, h / 2, 0);
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, u + uv.getX(i) * w, 1 - (v + (1 - uv.getY(i)) * hh));
+    const root = new THREE.Group(), bb = new THREE.Group(), sprite = new THREE.Group();
+    root.add(bb); bb.add(sprite); sprite.add(new THREE.Mesh(geo, FIG_MAT));
+    if (o.shadow !== false) {
+      const sh = new THREE.Mesh(SHADOW_GEO, SHADOW_MAT);
+      sh.scale.set(Math.min(W, 1.4) * 0.8, 1, 0.45); sh.position.y = 0.012; root.add(sh); root.shadow = sh;
+    }
+    const f = { root, bb, sprite, h, w: W, faces: o.faces || 1, dir: 1, flip: o.faces || 1, prev: null };
+    FIGURES.push(f);
+    return f;
+  }
+  /* 움직임 표현: 통통 튀기, 좌우로 기우뚱 */
+  function hop(f, t, speed = 7, amp = 0.05) { f.sprite.position.y = Math.abs(Math.sin(t * speed)) * amp; f.sprite.rotation.z = Math.sin(t * speed) * 0.05; }
+  function sway(f, t, speed = 2, amp = 0.06) { f.sprite.rotation.z = Math.sin(t * speed) * amp; }
+  function breathe(f, t, speed = 2, amp = 0.025) { f.sprite.scale.y = 1 + Math.sin(t * speed) * amp; }
+
+  const _cam = new THREE.Vector3(), _p = new THREE.Vector3();
+  function updateFigures(camPos) {
+    for (let i = 0; i < FIGURES.length; i++) {
+      const f = FIGURES[i];
+      f.root.getWorldPosition(_p);
+      const yaw = Math.atan2(camPos.x - _p.x, camPos.z - _p.z);
+      f.bb.rotation.y = yaw;
+      if (f.prev) {
+        // 화면 기준 오른쪽(+)/왼쪽(-)으로 움직이는지 보고 그림을 좌우로 뒤집는다
+        const dx = _p.x - f.prev.x, dz = _p.z - f.prev.z;
+        const side = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+        if (Math.abs(side) > 0.002) f.dir = side > 0 ? 1 : -1;
+        f.prev.copy(_p);
+      } else f.prev = _p.clone();
+      // 뒤집을 때는 종이 인형처럼 빠르게 휙 돌아선다
+      f.flip += ((f.dir * f.faces) - f.flip) * 0.3;
+      f.sprite.scale.x = Math.abs(f.flip) < 0.15 ? (f.flip < 0 ? -0.15 : 0.15) : f.flip;
+    }
+  }
 
   /* =========================================================================
      놀이 정의: 위치, 이름, 설명, 만들기(setup) → 매 프레임 갱신 함수
@@ -128,476 +101,266 @@
   const GAMES = [
     {
       id: 'hoop', name: '굴렁쇠 굴리기', pos: [-3, 1.5],
-      desc: '막대로 나무 테를 밀며 광장을 달립니다. 그림 아래쪽 가운데에서 볼 수 있는 놀이예요.',
+      desc: '막대로 나무 테를 밀며 광장을 달립니다. 그림 아래쪽 가운데, 빨간 바지 소년과 초록 옷 아이가 굴렁쇠를 굴려요.',
       setup(g) {
-        const kids = [makeChild({ girl: false }), makeChild({ girl: false, shirt: PAL.blue })];
-        const hoops = kids.map((k, i) => {
+        const kids = [figure('hoop_boy', 1.2, { faces: -1 }), figure('hoop_girl', 1.15, { faces: 1 })];
+        const hoops = kids.map(k => {
           g.add(k.root);
-          const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.022, 6, 24), mat(PAL.wood));
-          g.add(hoop);
-          const st = stick(0.7); st.rotation.x = 0.9; st.position.z = 0.25; attachToHand(k.armA, st);
-          return hoop;
+          const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.022, 6, 28), mat(0x5a3b22));
+          g.add(hoop); return hoop;
         });
-        return (t) => kids.forEach((k, i) => {
-          const R = 2.6 - i * 0.9, sp = 0.75 + i * 0.25, a = t * sp + i * 2;
-          k.root.position.set(Math.cos(a) * R, 0, Math.sin(a) * R);
-          faceAlong(k.root, -Math.sin(a), Math.cos(a));
-          walkPose(k, t, 1.3);
-          k.armA.rotation.x = -0.7;
-          const ha = a + 0.33;
-          const h = hoops[i];
-          h.position.set(Math.cos(ha) * (R + 0.25), 0.38, Math.sin(ha) * (R + 0.25));
-          h.rotation.set(0, Math.atan2(-Math.sin(ha), Math.cos(ha)) + Math.PI / 2, 0);
-          h.rotateZ(-t * sp * R / 0.36);
-        });
+        const watcher = figure('crouch_girl', 0.85); watcher.root.position.set(0.4, 0, 0.3); g.add(watcher.root);
+        return (t) => {
+          kids.forEach((k, i) => {
+            const R = 2.6 - i * 0.9, sp = 0.6 + i * 0.2, a = t * sp + i * 2;
+            k.root.position.set(Math.cos(a) * R, 0, Math.sin(a) * R);
+            hop(k, t + i, 6.5, 0.06);
+            const ha = a + 0.33, h = hoops[i];
+            h.position.set(Math.cos(ha) * (R + 0.15), 0.4, Math.sin(ha) * (R + 0.15));
+            h.rotation.set(0, Math.atan2(-Math.sin(ha), Math.cos(ha)) + Math.PI / 2, 0);
+            h.rotateZ(-t * sp * R / 0.4);
+          });
+          breathe(watcher, t, 1.5);
+        };
       },
     },
     {
       id: 'leapfrog', name: '등 넘기 (말뚝박기)', pos: [3.5, -3.5],
-      desc: '한 아이가 허리를 굽히면 다른 아이가 등을 짚고 훌쩍 뛰어넘어요. 차례로 바꿔 가며 줄지어 넘습니다.',
+      desc: '한 아이가 허리를 굽히면 다른 아이가 등을 짚고 훌쩍 뛰어넘어요. 다음 차례 아이가 달려옵니다.',
       setup(g) {
-        const base = makeChild({ girl: false, shirt: PAL.brown });
-        base.spine.rotation.x = 1.25; base.armA.rotation.x = base.armB.rotation.x = -0.3;
-        base.legA.rotation.x = base.legB.rotation.x = -0.15;
-        base.root.rotation.y = Math.PI / 2;
-        g.add(base.root);
-        const jumpers = [makeChild({ girl: false, shirt: PAL.red }), makeChild({ girl: false, shirt: PAL.white })];
-        jumpers.forEach(j => g.add(j.root));
-        const watcher = makeChild({ girl: true }); watcher.root.position.set(0.3, 0, -1.8); g.add(watcher.root);
+        const pair = figure('leap_pair', 1.6); g.add(pair.root);
+        const runner = figure('leap_run', 1.2, { faces: 1 }); g.add(runner.root);
         return (t) => {
-          jumpers.forEach((j, i) => {
-            const T = 2.8, p = ((t + i * T / 2) % T) / T;
-            const x = -2.6 + 5.2 * p;
-            const air = Math.abs(x) < 0.85;
-            const y = air ? Math.cos(x / 0.85 * Math.PI / 2) * 0.75 : 0;
-            j.root.position.set(x, y, 0);
-            j.root.rotation.y = Math.PI / 2;
-            if (air) {
-              j.legA.rotation.z = 0.7; j.legB.rotation.z = -0.7; j.legA.rotation.x = j.legB.rotation.x = -0.5;
-              j.armA.rotation.x = j.armB.rotation.x = -1.3; j.body.position.y = 0;
-            } else {
-              j.legA.rotation.z = j.legB.rotation.z = 0; walkPose(j, t, 1.4);
-            }
-          });
-          watcher.armA.rotation.x = -2.5 - Math.sin(t * 5) * 0.4;
-          watcher.root.rotation.y = Math.sin(t * 0.7) * 0.5;
+          const p = (t * 0.3) % 1;
+          // 등 짚고 넘는 순간: 위로 살짝 솟았다가 내려앉기
+          const jump = Math.max(0, Math.sin(t * 2.2));
+          pair.sprite.position.y = jump * 0.12; pair.sprite.rotation.z = -jump * 0.04;
+          runner.root.position.set(-3 + p * 2.3, 0, 0.6);
+          runner.root.visible = p < 0.97;
+          hop(runner, t, 8, 0.07);
         };
       },
     },
     {
       id: 'stilts', name: '죽마 타기', pos: [-7.5, -5.5],
-      desc: '긴 나무다리 위에 올라서서 뒤뚱뒤뚱 걸어요. 그림 왼쪽에서 친구 둘이 죽마를 타고 있습니다.',
+      desc: '긴 나무다리 위에 올라서서 뒤뚱뒤뚱 걸어요. 그림 오른쪽 가운데, 망토를 두른 아이가 죽마를 타고 있습니다.',
       setup(g) {
-        const kids = [makeChild({ girl: false, shirt: PAL.blue }), makeChild({ girl: false, shirt: PAL.ochre })];
-        kids.forEach(k => {
-          g.add(k.root);
-          [k.legA, k.legB].forEach((leg, i) => {
-            const pole = stick(1.9, PAL.wood, 0.022); pole.position.set(i ? -0.06 : 0.06, -0.45, 0.1);
-            leg.add(pole);
-            const step = mesh(new THREE.BoxGeometry(0.08, 0.03, 0.12), PAL.wood, i ? -0.06 : 0.06, -0.47, 0.06); leg.add(step);
-          });
-        });
-        return (t) => kids.forEach((k, i) => {
-          const L = 3, p = (t * 0.25 + i * 0.5) % 2, dir = p < 1 ? 1 : -1, u = p < 1 ? p : 2 - p;
-          const x = (u - 0.5) * L;
-          k.root.position.set(x, 0.92 + Math.abs(Math.sin(t * 2.2)) * 0.04, i * 1.5 - 0.7);
-          k.root.rotation.y = dir * Math.PI / 2;
-          const w = Math.sin(t * 2.2 + i);
-          k.legA.rotation.x = w * 0.28; k.legB.rotation.x = -w * 0.28;
-          k.armA.rotation.x = -1.2 + w * 0.2; k.armB.rotation.x = -1.2 - w * 0.2;
-          k.root.rotation.z = w * 0.06;
-        });
+        const k = figure('stilts', 1.8, { faces: 1 }); g.add(k.root);
+        const friend = figure('stick_boy', 1.3); friend.root.position.set(1.4, 0, -0.8); g.add(friend.root);
+        return (t) => {
+          const p = (t * 0.12) % 2, u = p < 1 ? p : 2 - p;
+          k.root.position.set((u - 0.5) * 3, 0, 0.3);
+          k.sprite.rotation.z = Math.sin(t * 2.2) * 0.07;
+          k.sprite.position.y = Math.abs(Math.sin(t * 2.2)) * 0.04;
+          sway(friend, t, 1.2, 0.04);
+        };
       },
     },
     {
       id: 'tops', name: '팽이 치기', pos: [1.5, 3.2],
-      desc: '채찍으로 팽이를 쳐서 계속 돌게 해요. 땅바닥에서 팽이가 비틀비틀 돌아갑니다.',
+      desc: '채찍으로 팽이를 쳐서 계속 돌게 해요. 그림 가운데 시청 아치 아래에서 아이들이 팽이를 칩니다.',
       setup(g) {
-        const tops = [], kids = [];
+        const tops = [];
         for (let i = 0; i < 3; i++) {
           const top = new THREE.Group();
           top.add(mesh(new THREE.ConeGeometry(0.09, 0.16, 10).rotateX(Math.PI), [PAL.red, PAL.ochre, PAL.blue][i], 0, 0.08, 0));
           top.add(mesh(new THREE.CylinderGeometry(0.092, 0.092, 0.04, 10), PAL.wood, 0, 0.17, 0));
           g.add(top); tops.push(top);
-          const k = makeChild({ girl: false });
-          const whip = stick(0.6, PAL.wood, 0.012); whip.rotation.x = 1.1; whip.position.z = 0.2; attachToHand(k.armA, whip);
-          const lash = stick(0.5, PAL.white, 0.006); lash.position.set(0, -0.1, 0.5); lash.rotation.x = 0.3; k.armA.add(lash);
-          g.add(k.root); kids.push(k);
         }
-        return (t) => tops.forEach((top, i) => {
-          const a = i * 2.1 + t * 0.25;
-          const cx = Math.cos(a) * 1.3, cz = Math.sin(a) * 1.0;
-          top.position.set(cx, 0, cz);
-          top.rotation.set(Math.sin(t * 3 + i) * 0.15, t * 18, Math.cos(t * 3 + i) * 0.15);
-          const k = kids[i];
-          k.root.position.set(cx + 0.7 * Math.cos(i), 0, cz + 0.7 * Math.sin(i));
-          faceAlong(k.root, cx - k.root.position.x, cz - k.root.position.z);
-          const sw = Math.sin(t * 4 + i * 1.7);
-          k.armA.rotation.x = -1.6 + sw * 1.0; k.armA.rotation.z = 0.3;
-          k.spine.rotation.x = 0.15 + Math.max(0, sw) * 0.15;
-        });
+        const whip = figure('tops_whip', 1.25); whip.root.position.set(-0.9, 0, 0); g.add(whip.root);
+        const pair = figure('tops_pair', 1.25); pair.root.position.set(1.0, 0, -0.5); g.add(pair.root);
+        return (t) => {
+          tops.forEach((top, i) => {
+            const a = i * 2.1 + t * 0.4;
+            top.position.set(Math.cos(a) * 0.55 + (i - 1) * 0.3, 0, Math.sin(a) * 0.4 + 0.5);
+            top.rotation.set(Math.sin(t * 3 + i) * 0.15, t * 18, Math.cos(t * 3 + i) * 0.15);
+          });
+          // 채찍을 내려치는 순간 몸이 앞으로 쏠린다
+          const s = Math.max(0, Math.sin(t * 3.5));
+          whip.sprite.rotation.z = -s * 0.1; pair.sprite.rotation.z = Math.max(0, Math.sin(t * 3.5 + 1.5)) * 0.08;
+        };
       },
     },
     {
       id: 'blind', name: '눈 가리고 술래잡기', pos: [6.5, 2],
-      desc: '눈을 가린 술래가 두 팔을 뻗고 더듬거리면, 친구들은 놀리며 이리저리 피해 다녀요.',
+      desc: '눈을 가린 술래(노란 옷)가 두 팔을 뻗고 더듬거리면, 친구들은 놀리며 이리저리 피해 다녀요.',
       setup(g) {
-        const it = makeChild({ girl: false, blindfold: true, shirt: PAL.red });
-        g.add(it.root);
-        const others = []; for (let i = 0; i < 4; i++) { const k = makeChild(); g.add(k.root); others.push(k); }
+        const it = figure('blind_it', 1.2, { faces: -1 }); g.add(it.root);
+        const others = [figure('blind_girl', 1.3, { faces: -1 }), figure('blind_boy', 1.25, { faces: -1 })];
+        others.forEach(k => g.add(k.root));
         return (t) => {
-          it.root.rotation.y = Math.sin(t * 0.5) * 2.2;
-          it.root.position.set(Math.sin(t * 0.3) * 0.6, 0, Math.cos(t * 0.23) * 0.5);
-          it.armA.rotation.x = it.armB.rotation.x = -1.45 + Math.sin(t * 2) * 0.12;
-          it.armA.rotation.z = 0.15 + Math.sin(t * 1.3) * 0.15; it.armB.rotation.z = -0.15;
-          const w = Math.sin(t * 2.5); it.legA.rotation.x = w * 0.2; it.legB.rotation.x = -w * 0.2;
+          it.root.position.set(Math.sin(t * 0.3) * 0.8, 0, Math.cos(t * 0.23) * 0.5);
+          sway(it, t, 1.6, 0.08);
           others.forEach((k, i) => {
-            const a = t * 0.35 + i * Math.PI / 2;
-            const r = 2.1 + Math.sin(t * 1.4 + i * 2) * 0.6;
+            const a = t * 0.35 * (i ? -1 : 1) + i * Math.PI;
+            const r = 2 + Math.sin(t * 1.4 + i * 2) * 0.5;
             k.root.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
-            faceAlong(k.root, it.root.position.x - k.root.position.x, it.root.position.z - k.root.position.z);
-            walkPose(k, t + i, 0.6, 0.3);
-            if (i % 2) { k.armA.rotation.x = -2.6 + Math.sin(t * 6 + i) * 0.3; }
+            hop(k, t + i, 5, 0.05);
           });
         };
       },
     },
     {
       id: 'knuckle', name: '공기놀이', pos: [-5, 3],
-      desc: '양의 발목뼈(공깃돌)를 던져 올리고 받는 놀이예요. 그림 왼쪽 아래에서 두 소녀가 마주 앉아 놀고 있습니다.',
+      desc: '양의 발목뼈(공깃돌)를 던져 올리고 받는 놀이예요. 그림 왼쪽 아래 구석에서 두 소녀가 마주 앉아 놀고 있습니다.',
       setup(g) {
-        const a = makeChild({ girl: true, dress: PAL.red }), b = makeChild({ girl: true, dress: PAL.blue });
-        a.root.position.set(0, 0, -0.45); b.root.position.set(0, 0, 0.45); b.root.rotation.y = Math.PI;
-        [a, b].forEach(k => { kneelPose(k); g.add(k.root); });
+        const a = figure('knuckle_a', 1.15); a.root.position.set(-0.7, 0, 0); g.add(a.root);
+        const b = figure('knuckle_b', 1.0); b.root.position.set(0.75, 0, -0.1); g.add(b.root);
         const bones = [];
         for (let i = 0; i < 5; i++) {
-          const bn = mesh(new THREE.BoxGeometry(0.04, 0.03, 0.05), PAL.white, (i - 2) * 0.07, 0.015, (i % 2) * 0.05);
+          const bn = mesh(new THREE.BoxGeometry(0.04, 0.03, 0.05), PAL.white, (i - 2) * 0.07, 0.015, 0.25 + (i % 2) * 0.05);
           g.add(bn); bones.push(bn);
         }
         return (t) => {
-          const p = (t % 1.6) / 1.6;
-          const toss = Math.sin(p * Math.PI);
-          a.armA.rotation.x = -0.9 - toss * 0.9;
-          bones[2].position.set(0.15, 0.25 + toss * 0.55, -0.15);
-          b.armB.rotation.x = -0.6 - Math.max(0, Math.sin(t * 4)) * 0.3;
-          b.spine.rotation.x = 0.25; a.spine.rotation.x = 0.2;
-          b.neck.rotation.x = -0.3 * toss;
+          const p = (t % 1.6) / 1.6, toss = Math.sin(p * Math.PI);
+          bones[2].position.set(0.1, 0.1 + toss * 0.6, 0.25);
+          b.sprite.rotation.z = toss * 0.05; breathe(a, t, 1.7);
         };
       },
     },
     {
       id: 'handstand', name: '물구나무서기', pos: [-1, -7.5],
-      desc: '두 손으로 땅을 짚고 거꾸로 서요. 다리가 흔들흔들, 친구가 옆에서 세어 줍니다.',
+      desc: '두 손으로 땅을 짚고 거꾸로 서요. 그림 왼쪽 빨간 울타리 앞 풀밭에서 한 아이가 다리를 흔들고 있어요.',
       setup(g) {
-        const k = makeChild({ girl: false, shirt: PAL.ochre });
-        const holder = new THREE.Group(); holder.add(k.root); g.add(holder);
-        k.root.rotation.z = Math.PI; k.root.position.y = 1.24 * k.s;
-        k.armA.rotation.x = k.armB.rotation.x = Math.PI;
-        k.armA.rotation.z = 0.15; k.armB.rotation.z = -0.15;
-        const c = makeChild({ girl: true }); c.root.position.set(1, 0, 0.6); c.root.rotation.y = -1.9; g.add(c.root);
-        const roller = makeChild({ girl: false, shirt: PAL.slate }); g.add(roller.root);
-        return (t) => {
-          holder.rotation.x = Math.sin(t * 1.7) * 0.06; holder.rotation.z = Math.sin(t * 1.1) * 0.05;
-          k.legA.rotation.x = Math.sin(t * 2.3) * 0.35; k.legB.rotation.x = -Math.sin(t * 2.0) * 0.25;
-          c.armA.rotation.x = -1.2 - Math.abs(Math.sin(t * 3)) * 0.6;
-          // 옆에서 앞구르기 하는 아이
-          const p = (t * 0.4) % 1;
-          roller.root.position.set(-1.5, 0.45, -1.5 + p * 3);
-          roller.root.rotation.x = p * Math.PI * 4;
-          roller.root.position.y = 0.5 + Math.abs(Math.sin(p * Math.PI * 2)) * 0.05;
-          roller.legA.rotation.x = roller.legB.rotation.x = -2.2;
-          roller.armA.rotation.x = roller.armB.rotation.x = -2;
-          roller.spine.rotation.x = 0.8;
-          roller.body.position.y = -0.5;
-        };
+        const k = figure('handstand', 1.3); g.add(k.root);
+        return (t) => { k.sprite.rotation.z = Math.sin(t * 1.7) * 0.06; k.sprite.position.x = Math.sin(t * 1.1) * 0.03; };
       },
     },
     {
       id: 'joust', name: '말타기 겨루기', pos: [4.5, -11],
-      desc: '한 아이가 말이 되고 다른 아이가 등에 올라타, 상대편 기수를 밀어 떨어뜨리는 겨루기예요.',
+      desc: '한 아이가 말이 되고 다른 아이가 등에 올라타, 상대편 기수를 밀고 당겨 떨어뜨리는 겨루기예요. 그림 한가운데에 있어요.',
       setup(g) {
-        const pairs = [0, 1].map(i => {
-          const horse = makeChild({ girl: false, shirt: i ? PAL.blue : PAL.red });
-          horse.spine.rotation.x = 0.6; horse.armA.rotation.x = horse.armB.rotation.x = 0.5;
-          const rider = makeChild({ girl: false, shirt: i ? PAL.white : PAL.ochre, scale: 0.85 });
-          rider.root.position.set(0, 0.42, -0.35);
-          rider.legA.rotation.set(-1.2, 0, 0.5); rider.legB.rotation.set(-1.2, 0, -0.5);
-          horse.root.add(rider.root);
-          g.add(horse.root);
-          return { horse, rider };
-        });
+        const A = figure('joust_a', 1.4, { faces: 1 }), B = figure('joust_b', 1.5, { faces: -1 });
+        g.add(A.root); g.add(B.root);
         return (t) => {
-          const clash = Math.sin(t * 1.2);
-          pairs.forEach(({ horse, rider }, i) => {
-            const d = i ? 1 : -1;
-            horse.root.position.set(d * (0.75 + Math.max(0, -clash) * 1.6), 0, 0);
-            horse.root.rotation.y = -d * Math.PI / 2;
-            walkPose(horse, t + i, 0.9, 0.35);
-            horse.spine.rotation.x = 0.7; horse.armA.rotation.x = horse.armB.rotation.x = 0.6;
-            rider.armA.rotation.x = -1.4 - Math.max(0, clash) * 0.4;
-            rider.armB.rotation.x = -1.0;
-            rider.spine.rotation.z = Math.sin(t * 3 + i) * 0.12;
-          });
+          const c = Math.max(0, -Math.sin(t * 0.9));
+          A.root.position.set(-(1.1 + c * 1.6), 0, 0); B.root.position.set(1.1 + c * 1.6, 0, 0.2);
+          A.dir = 1; B.dir = 1;
+          hop(A, t, 4, 0.04); hop(B, t + 1, 4, 0.04);
         };
       },
     },
     {
       id: 'barrel', name: '술통 타기', pos: [8.3, -5.5],
-      desc: '시청 건물 앞에서 커다란 술통에 말 타듯 올라앉아 흔들어요. 다른 아이는 술통을 굴립니다.',
+      desc: '커다란 술통에 말 타듯 올라앉아 흔들어요. 그림 오른쪽 아래, 빨간 옷 아이가 친구를 술통 위로 끌어올립니다.',
       setup(g) {
-        const barrel = new THREE.Group();
-        const body = mesh(new THREE.CylinderGeometry(0.42, 0.42, 1.05, 14).rotateZ(Math.PI / 2), PAL.wood);
-        barrel.add(body);
-        [-0.35, 0, 0.35].forEach(x => barrel.add(mesh(new THREE.TorusGeometry(0.43, 0.018, 4, 18).rotateY(Math.PI / 2), PAL.dark, x, 0, 0)));
-        barrel.position.y = 0.42; g.add(barrel);
-        const rider = makeChild({ girl: false, shirt: PAL.vermilion });
-        rider.legA.rotation.z = 0.9; rider.legB.rotation.z = -0.9; rider.legA.rotation.x = rider.legB.rotation.x = -0.2;
-        rider.root.position.set(0, 0.42 - 0.04, 0); rider.root.rotation.y = Math.PI / 2;
-        g.add(rider.root);
-        const pusher = makeChild({ girl: false }); pusher.spine.rotation.x = 0.5; g.add(pusher.root);
-        const roll = new THREE.Group();
-        const b2 = mesh(new THREE.CylinderGeometry(0.3, 0.3, 0.7, 12), PAL.wood); b2.rotation.z = Math.PI / 2;
-        roll.add(b2); g.add(roll);
-        return (t) => {
-          const rock = Math.sin(t * 2.2);
-          barrel.rotation.x = rock * 0.12;
-          rider.root.position.y = 0.36 + Math.abs(rock) * 0.06;
-          rider.spine.rotation.x = -rock * 0.25;
-          rider.armA.rotation.x = rider.armB.rotation.x = -0.6 + rock * 0.4;
-          const p = (t * 0.25) % 2, u = p < 1 ? p : 2 - p;
-          const z = 1.6 + (u - 0.5) * 3;
-          roll.position.set(-1.4, 0.3, z); roll.rotation.x = z / 0.3;
-          pusher.root.position.set(-1.4, 0, z - (p < 1 ? 0.6 : -0.6));
-          pusher.root.rotation.y = p < 1 ? 0 : Math.PI;
-          walkPose(pusher, t, 0.7, 0.4); pusher.armA.rotation.x = pusher.armB.rotation.x = -1.2;
-        };
+        const k = figure('barrel', 1.75); g.add(k.root);
+        return (t) => { k.sprite.rotation.z = Math.sin(t * 2.2) * 0.05; };
       },
     },
     {
       id: 'bladder', name: '오줌보 풍선 불기', pos: [-8.5, -0.5],
-      desc: '돼지 오줌보를 풍선처럼 불어 부풀려요. 부풀린 공은 차고 던지며 놀았습니다.',
+      desc: '돼지 오줌보를 풍선처럼 불어 부풀려요. 그림 아래쪽, 흰 두건을 쓴 아이가 커다란 오줌보를 껴안고 붑니다.',
       setup(g) {
-        const blower = makeChild({ girl: false, shirt: PAL.green });
-        blower.armA.rotation.x = blower.armB.rotation.x = -1.4; blower.armA.rotation.z = -0.35; blower.armB.rotation.z = 0.35;
-        g.add(blower.root);
-        const ball = mesh(new THREE.SphereGeometry(0.1, 10, 8), 0xe8d9a8, 0, 0.92, 0.3); g.add(ball);
-        const kicker = makeChild({ girl: false, shirt: PAL.red }); kicker.root.position.set(1.6, 0, 0.8); g.add(kicker.root);
-        const ball2 = mesh(new THREE.SphereGeometry(0.16, 10, 8), 0xe8d9a8); g.add(ball2);
-        return (t) => {
-          const p = (t % 4) / 4;
-          ball.scale.setScalar(0.6 + p * 1.6);
-          ball.position.z = 0.28 + p * 0.15;
-          blower.neck.rotation.x = -0.15 + Math.sin(t * 6) * 0.03;
-          blower.spine.rotation.x = -Math.sin(p * Math.PI) * 0.1;
-          const k = (t % 1.4) / 1.4;
-          kicker.legA.rotation.x = k < 0.2 ? -k * 6 : 0;
-          kicker.root.rotation.y = -2.2;
-          ball2.position.set(1.4 - Math.sin(k * Math.PI) * 0.2, 0.16 + Math.sin(k * Math.PI) * 1.4, 0.5);
-        };
+        const k = figure('bladder', 1.25); g.add(k.root);
+        return (t) => { const p = (t % 3) / 3; k.sprite.scale.y = 1 + Math.sin(p * Math.PI) * 0.03; k.sprite.rotation.z = Math.sin(t * 1.3) * 0.03; };
       },
     },
     {
       id: 'hobby', name: '막대말 타기와 바람개비', pos: [-4.5, -12],
-      desc: '막대에 말머리를 단 장난감 말을 다리 사이에 끼고 달려요. 손에 든 바람개비가 바람에 돌아갑니다.',
+      desc: '막대를 다리 사이에 끼고 말처럼 달려요. 그림 위쪽, 긴 막대에 바람개비를 단 소녀도 함께 뛰어놉니다.',
       setup(g) {
-        const riders = [0, 1, 2].map(i => {
-          const k = makeChild({ girl: false });
-          const horse = new THREE.Group();
-          const pole = stick(1.2, PAL.wood, 0.02); pole.rotation.x = Math.PI / 2 - 0.35; horse.add(pole);
-          const head = mesh(new THREE.BoxGeometry(0.1, 0.12, 0.22), [PAL.white, PAL.brown, PAL.dark][i], 0, 0.22, 0.6);
-          head.rotation.x = 0.5; horse.add(head);
-          horse.position.set(0, 0.48, 0.05); k.body.add(horse);
-          const pin = new THREE.Group();
-          const st = stick(0.45); st.position.y = 0.2; pin.add(st);
-          const wheel = new THREE.Group(); wheel.position.y = 0.43;
-          [0, 1, 2, 3].forEach(j => {
-            const blade = mesh(new THREE.PlaneGeometry(0.13, 0.06).translate(0.065, 0, 0), [PAL.red, PAL.ochre][j % 2]);
-            blade.material.side = THREE.DoubleSide; blade.rotation.z = j * Math.PI / 2; wheel.add(blade);
-          });
-          pin.add(wheel); pin.rotation.x = Math.PI; pin.position.set(0, -0.38, 0.05);
-          k.armB.add(pin); k.wheel = wheel;
-          g.add(k.root); return k;
-        });
-        return (t) => riders.forEach((k, i) => {
-          const a = t * 0.7 + i * 2.1, R = 1.9 + i * 0.3;
+        const kids = [figure('hobby_b', 1.1, { faces: -1 }), figure('pinwheel', 1.2, { faces: -1 })];
+        kids.forEach(k => g.add(k.root));
+        return (t) => kids.forEach((k, i) => {
+          const a = t * 0.5 * (i ? -1 : 1) + i * 2.1, R = 1.7 + i * 0.5;
           k.root.position.set(Math.cos(a) * R, 0, Math.sin(a) * R);
-          faceAlong(k.root, -Math.sin(a), Math.cos(a));
-          walkPose(k, t + i, 1.5, 0.6);
-          k.armA.rotation.x = -0.6;
-          k.armB.rotation.x = -2.2;
-          k.wheel.rotation.y = t * 12;
+          hop(k, t + i, 7, 0.07);
         });
       },
     },
     {
-      id: 'ring', name: '손잡고 빙글빙글', pos: [1, -16],
-      desc: '소녀들이 손을 잡고 원을 그리며 돌아요. 원 가운데 아이는 술래 노릇을 합니다.',
+      id: 'ring', name: '치마 부풀리기 (빙글빙글)', pos: [1, -16],
+      desc: '소녀들이 제자리에서 빙글빙글 돌다가 털썩 주저앉으면 치마가 동그랗게 부풀어요. 그림 왼쪽 위 풀밭의 빨간 치마 두 소녀예요.',
       setup(g) {
-        const ring = new THREE.Group(); g.add(ring);
-        const N = 7, R = 1.25;
-        const girls = [];
-        for (let i = 0; i < N; i++) {
-          const k = makeChild({ girl: true });
-          const a = i / N * Math.PI * 2;
-          k.root.position.set(Math.cos(a) * R, 0, Math.sin(a) * R);
-          faceAlong(k.root, -Math.cos(a), -Math.sin(a));
-          k.armA.rotation.z = 1.25; k.armB.rotation.z = -1.25;
-          ring.add(k.root); girls.push(k);
-        }
-        const mid = makeChild({ girl: true, dress: PAL.vermilion }); g.add(mid.root);
+        const A = figure('spin_a', 0.75), B = figure('spin_b', 0.7);
+        A.root.position.set(-0.7, 0, 0); B.root.position.set(0.7, 0, -0.3);
+        g.add(A.root); g.add(B.root);
         return (t) => {
-          ring.rotation.y = t * 0.45;
-          girls.forEach((k, i) => {
-            const w = Math.sin(t * 5 + i);
-            k.legA.rotation.z = Math.max(0, w) * 0.3; k.legB.rotation.z = -Math.max(0, -w) * 0.3;
-            k.body.position.y = Math.abs(Math.sin(t * 5 + i)) * 0.05;
+          [A, B].forEach((k, i) => {
+            const p = Math.sin(t * 1.5 + i * 1.7);
+            k.sprite.scale.y = 1 + p * 0.06; k.sprite.rotation.z = Math.sin(t * 3 + i) * 0.03;
           });
-          mid.root.rotation.y = -t * 0.8;
-          mid.armA.rotation.x = mid.armB.rotation.x = -0.3 + Math.sin(t * 2) * 0.2;
-          mid.armA.rotation.z = 0.2;
         };
       },
     },
     {
       id: 'rail', name: '난간 돌기', pos: [-12, -14],
-      desc: '울타리 나무 막대를 붙잡고 몸을 빙글 돌려 넘겨요. 한 아이는 울타리 위에 앉아 구경합니다.',
+      desc: '나무 난간을 붙잡고 몸을 거꾸로 넘겨요. 그림 가운데 시청 앞 나무 틀에서 빨간 바지 아이가 매달려 돌고, 옆에서는 아이들이 울타리에 올라앉아 막대를 흔듭니다.',
       setup(g) {
-        const fenceH = 1.15;
-        [-2, 0, 2].forEach(x => g.add(mesh(new THREE.BoxGeometry(0.12, fenceH + 0.15, 0.12).translate(0, (fenceH + 0.15) / 2, 0), PAL.wood, x, 0, 0)));
-        const rail = mesh(new THREE.CylinderGeometry(0.035, 0.035, 4.2, 6).rotateZ(Math.PI / 2), PAL.wood, 0, fenceH, 0); g.add(rail);
-        const rail2 = mesh(new THREE.BoxGeometry(4.2, 0.08, 0.06), PAL.wood, 0, 0.5, 0); g.add(rail2);
-        const pivot = new THREE.Group(); pivot.position.set(-0.9, fenceH, 0); g.add(pivot);
-        const k = makeChild({ girl: false, shirt: PAL.red, scale: 0.85 });
-        k.armA.rotation.x = k.armB.rotation.x = Math.PI;
-        k.root.position.y = -1.24 * k.s; pivot.add(k.root);
-        const sitter = makeChild({ girl: false, shirt: PAL.blue });
-        sitter.legA.rotation.x = sitter.legB.rotation.x = -0.4;
-        sitter.root.position.set(1.1, fenceH - 0.42, 0.05); g.add(sitter.root);
+        const fenceH = 0.9;
+        [-1.6, 1.6].forEach(x => g.add(mesh(new THREE.BoxGeometry(0.12, fenceH + 0.1, 0.12).translate(0, (fenceH + 0.1) / 2, 0), PAL.wood, x, 0, -0.6)));
+        g.add(mesh(new THREE.BoxGeometry(3.4, 0.1, 0.1), 0xa0402c, 0, fenceH, -0.6));
+        g.add(mesh(new THREE.BoxGeometry(3.4, 0.08, 0.06), 0xa0402c, 0, 0.35, -0.6));
+        const flip = figure('rail_flip', 1.55); flip.root.position.set(-1.2, 0, 0.3); g.add(flip.root);
+        const sit = figure('fence_sit', 1.3); sit.root.position.set(0.6, fenceH - 0.55, -0.55); sit.root.shadow.visible = false; g.add(sit.root);
         return (t) => {
-          const p = (t * 0.35) % 1;
-          pivot.rotation.x = p < 0.7 ? -(p / 0.7) * Math.PI * 2 : Math.sin((p - 0.7) * 20) * 0.15;
-          k.legA.rotation.x = k.legB.rotation.x = p < 0.7 ? -0.9 * Math.sin(p / 0.7 * Math.PI) : 0;
-          sitter.legA.rotation.x = -0.4 + Math.sin(t * 3) * 0.4;
-          sitter.legB.rotation.x = -0.4 - Math.sin(t * 3) * 0.4;
-          sitter.root.rotation.y = Math.PI + Math.sin(t * 0.5) * 0.3;
+          flip.sprite.rotation.z = Math.sin(t * 1.8) * 0.08;
+          sit.sprite.position.y = Math.abs(Math.sin(t * 3)) * 0.04;
         };
       },
     },
     {
       id: 'wedding', name: '결혼식 행렬 놀이', pos: [8.5, -16.5],
-      desc: '어른들의 결혼식을 흉내 내는 행렬이에요. 꽃관을 쓴 신부를 앞세워 천천히 걸어갑니다.',
+      desc: '어른들의 결혼식을 흉내 내는 행렬이에요. 그림 가운데, 종이 관을 쓴 신부를 둘러싸고 아이들이 천천히 걸어갑니다. 바구니를 든 소녀가 뒤따라요.',
       setup(g) {
-        const line = [];
-        for (let i = 0; i < 6; i++) {
-          const k = makeChild({ girl: true, dress: i === 1 ? PAL.dark : undefined });
-          if (i === 1) {
-            const crown = mesh(new THREE.TorusGeometry(0.1, 0.025, 5, 12).rotateX(Math.PI / 2), PAL.hay, 0, 0.22, 0);
-            k.neck.add(crown);
-          }
-          if (i === 4) {
-            const basket = mesh(new THREE.CylinderGeometry(0.12, 0.09, 0.12, 8), PAL.hay, 0, -0.42, 0.05);
-            k.armA.add(basket);
-          }
-          g.add(k.root); line.push(k);
-        }
-        return (t) => line.forEach((k, i) => {
-          const a = t * 0.12 - i * 0.3;
-          const x = Math.cos(a) * 2.6, z = Math.sin(a) * 1.4;
-          k.root.position.set(x, 0, z);
-          faceAlong(k.root, -Math.sin(a) * 2.6, Math.cos(a) * 1.4);
-          walkPose(k, t + i * 0.3, 0.45, 0.3);
-          if (i === 4) k.armA.rotation.x = -0.4;
-          if (i === 0) k.armA.rotation.x = k.armB.rotation.x = -1.0;
+        const bride = figure('wedding', 1.5), basket = figure('basket_girls', 1.0), couple = figure('walk_couple', 1.25);
+        [bride, basket, couple].forEach(k => g.add(k.root));
+        return (t) => [bride, basket, couple].forEach((k, i) => {
+          const a = t * 0.08 - i * 0.55;
+          k.root.position.set(Math.cos(a) * 2.6, 0, Math.sin(a) * 1.4);
+          hop(k, t + i, 3, 0.025);
         });
       },
     },
     {
       id: 'tree', name: '나무 타기', pos: [-14, -23],
-      desc: '그림 왼쪽 위 초록 숲에서는 아이들이 나무에 오르고 가지에 걸터앉아 놉니다.',
+      desc: '그림 왼쪽 위 강가의 나무에 한 아이가 줄기를 끌어안고 기어오르고 있어요.',
       setup(g) {
-        const tree = makeTree(4.6, 1.9, PAL.green);
-        g.add(tree);
-        const branch = mesh(new THREE.CylinderGeometry(0.06, 0.08, 1.6, 6).rotateZ(Math.PI / 2), PAL.brown, 0.75, 2.4, 0);
-        g.add(branch);
-        const sitter = makeChild({ girl: false, shirt: PAL.red });
-        sitter.legA.rotation.x = sitter.legB.rotation.x = -0.2;
-        sitter.root.position.set(1.0, 2.43 - 0.42 * sitter.s, 0.05); g.add(sitter.root);
-        const climber = makeChild({ girl: false, shirt: PAL.white });
-        climber.root.rotation.y = Math.PI; g.add(climber.root);
+        const tree = makeTree(4.6, 1.9, PAL.green); g.add(tree);
+        const k = figure('tree_climb', 1.25, { shadow: false }); k.root.position.z = 0.25; g.add(k.root);
         return (t) => {
-          sitter.legA.rotation.x = -0.2 + Math.sin(t * 2.5) * 0.45;
-          sitter.legB.rotation.x = -0.2 - Math.sin(t * 2.5) * 0.45;
-          sitter.armA.rotation.x = -0.4 + Math.sin(t) * 0.3;
-          const p = (t * 0.18) % 2, u = p < 1 ? p : 2 - p;
-          climber.root.position.set(0, u * 1.1, 0.33);
-          const w = Math.sin(t * 4);
-          climber.armA.rotation.x = -2.5 + w * 0.4; climber.armB.rotation.x = -2.5 - w * 0.4;
-          climber.legA.rotation.x = -0.4 + w * 0.4; climber.legB.rotation.x = -0.4 - w * 0.4;
+          const p = (t * 0.15) % 2, u = p < 1 ? p : 2 - p;
+          k.root.position.y = 0.2 + u * 0.9;
+          k.sprite.rotation.z = Math.sin(t * 4) * 0.03;
         };
       },
     },
     {
       id: 'swim', name: '강에서 헤엄치기', pos: [-21, -28],
-      desc: '그림 왼쪽 위 강가에서는 아이들이 옷을 벗고 물놀이를 합니다. 개헤엄 치는 머리가 물 위로 보여요.',
+      desc: '그림 왼쪽 위 강가에서는 아이들이 옷을 벗고 물놀이를 합니다. 물가에 앉은 아이, 물 위에 둥둥 뜬 아이가 보여요.',
       setup(g) {
-        const swimmers = [0, 1, 2, 3].map(i => {
-          const k = makeChild({ girl: false, shirt: PAL.skin, legs: PAL.skin, cap: PAL.dark, sleeve: PAL.skin });
-          k.root.rotation.x = Math.PI / 2; k.neck.rotation.x = -1.3;
-          const holder = new THREE.Group(); holder.add(k.root); g.add(holder);
-          k.holder = holder; return k;
-        });
-        const diver = makeChild({ girl: false, shirt: PAL.skin, legs: PAL.skin, sleeve: PAL.skin });
-        g.add(diver.root);
+        const sitter = figure('swim_sit', 0.9); sitter.root.position.set(-2.2, 0, 3.3); g.add(sitter.root);
+        const floaters = [0, 1].map(i => { const k = figure('swim_float', 0.42, { shadow: false, faces: -1 }); g.add(k.root); return k; });
         return (t) => {
-          swimmers.forEach((k, i) => {
-            const a = t * 0.15 + i * 1.6, R = 2 + i * 0.7;
-            k.holder.position.set(Math.cos(a) * R, -0.06 + Math.sin(t * 2 + i) * 0.04, Math.sin(a) * R * 0.6);
-            faceAlong(k.holder, -Math.sin(a), Math.cos(a) * 0.6);
-            const w = Math.sin(t * 5 + i);
-            k.armA.rotation.x = -2.2 + w * 0.8; k.armB.rotation.x = -2.2 - w * 0.8;
-            k.legA.rotation.x = w * 0.5; k.legB.rotation.x = -w * 0.5;
+          floaters.forEach((k, i) => {
+            const a = t * 0.12 + i * 3, R = 2 + i;
+            k.root.position.set(Math.cos(a) * R, -0.18 + Math.sin(t * 2 + i) * 0.03, Math.sin(a) * R * 0.6);
+            k.sprite.rotation.z = Math.sin(t * 3 + i) * 0.05;
           });
-          const p = (t * 0.25) % 1;
-          diver.root.position.set(4.6 - p * 1.2, p < 0.5 ? 0.15 : 0.15 + Math.sin((p - 0.5) * Math.PI * 2) * 0.5 - (p - 0.5) * 2.2, 2.6);
-          diver.root.rotation.y = -Math.PI / 2;
-          diver.root.rotation.x = p < 0.5 ? 0 : (p - 0.5) * 3;
-          diver.armA.rotation.x = diver.armB.rotation.x = p < 0.5 ? -0.2 - p * 5 : -2.9;
-          diver.root.visible = p < 0.9;
+          breathe(sitter, t, 1.4);
         };
       },
     },
     {
       id: 'marbles', name: '구슬치기', pos: [-9.5, -8.5],
-      desc: '쪼그려 앉아 손가락으로 구슬을 튕겨 구멍에 넣거나 상대 구슬을 맞히는 놀이예요.',
+      desc: '쪼그려 앉아 손가락으로 구슬을 튕겨 구멍에 넣거나 상대 구슬을 맞히는 놀이예요. 그림 오른쪽 위에서 두 아이가 몸을 숙여 구슬을 굴립니다.',
       setup(g) {
-        const players = [0, 1, 2].map(i => {
-          const k = makeChild({ girl: false });
-          const a = i / 3 * Math.PI * 2;
-          k.root.position.set(Math.cos(a) * 0.9, 0, Math.sin(a) * 0.9);
-          faceAlong(k.root, -Math.cos(a), -Math.sin(a));
-          kneelPose(k); k.spine.rotation.x = 0.55; k.armA.rotation.x = -0.6;
-          g.add(k.root); return k;
-        });
-        const hole = mesh(new THREE.CircleGeometry(0.08, 10).rotateX(-Math.PI / 2), PAL.dark, 0, 0.005, 0); g.add(hole);
-        const marbles = [PAL.red, PAL.blue, PAL.white, PAL.ochre].map((c, i) => {
-          const m = mesh(new THREE.SphereGeometry(0.025, 8, 6), c, 0, 0.025, 0); g.add(m); return m;
-        });
+        const k = figure('marbles', 1.0); k.root.position.set(-0.4, 0, -0.4); g.add(k.root);
+        const hole = mesh(new THREE.CircleGeometry(0.08, 10).rotateX(-Math.PI / 2), PAL.dark, 0.6, 0.005, 0.3); g.add(hole);
+        const marbles = [PAL.red, PAL.blue, PAL.white, PAL.ochre].map(c => { const m = mesh(new THREE.SphereGeometry(0.025, 8, 6), c, 0, 0.025, 0); g.add(m); return m; });
         return (t) => {
-          const turn = Math.floor(t / 2.2) % 3, p = (t % 2.2) / 2.2;
-          const sh = players[turn].root.position;
+          const p = (t % 2.4) / 2.4;
           marbles.forEach((m, i) => {
-            if (i === 0) {
-              const u = Math.min(1, p * 1.6);
-              m.position.set(sh.x * 0.6 * (1 - u), 0.025, sh.z * 0.6 * (1 - u));
-            } else {
-              const a = i * 2 + 0.5; m.position.set(Math.cos(a) * 0.3, 0.025, Math.sin(a) * 0.25);
-            }
+            if (i === 0) { const u = Math.min(1, p * 1.5); m.position.set(0.0 + u * 0.6, 0.025, 0.0 + u * 0.3); }
+            else { const a = i * 2 + 0.5; m.position.set(0.6 + Math.cos(a) * 0.3, 0.025, 0.3 + Math.sin(a) * 0.25); }
           });
-          players.forEach((k, i) => { k.armA.rotation.x = i === turn ? -0.6 - (p < 0.1 ? p * 5 : 0) : -0.4; });
+          k.sprite.rotation.z = p < 0.15 ? -p * 0.4 : 0;
         };
       },
     },
   ];
+
 
   /* ---------- 나무 ---------- */
   function makeTree(h = 4, r = 1.6, color = PAL.green) {
@@ -701,8 +464,7 @@
   /* ---------- 그림 텍스처: 로컬 파일 → 위키미디어 → 손그림 대체 ---------- */
   const PAINTING_SOURCES = [
     'childrens-games.jpg',
-    'https://upload.wikimedia.org/wikipedia/commons/thumb/9/98/Pieter_Bruegel_the_Elder_-_Children%E2%80%99s_Games_-_Google_Art_Project.jpg/2048px-Pieter_Bruegel_the_Elder_-_Children%E2%80%99s_Games_-_Google_Art_Project.jpg',
-    'https://commons.wikimedia.org/wiki/Special:FilePath/Pieter_Bruegel_the_Elder_-_Children%E2%80%99s_Games_-_Google_Art_Project.jpg?width=2048',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Pieter_Bruegel_the_Elder_-_Children%E2%80%99s_Games_-_Google_Art_Project.jpg/1920px-Pieter_Bruegel_the_Elder_-_Children%E2%80%99s_Games_-_Google_Art_Project.jpg',
   ];
   function fallbackPainting() {
     // 원작 구도를 따라 그린 스케치: 오른쪽 벽돌 건물, 가운데로 뻗은 거리, 왼쪽 위 초록 들판과 강
@@ -824,18 +586,18 @@
         stations.push({ game, panel: lbl.panel, tag: lbl.tag, x: game.pos[0], z: game.pos[1] });
       });
 
-      // 광장을 오가는 아이들
+      // 광장을 오가는 아이들 (그림 속 다른 아이들)
       const strollers = [];
-      for (let i = 0; i < 14; i++) {
-        const k = makeChild();
-        world.add(k.root);
-        strollers.push({ k, a: rnd() * 6.28, r: 4 + rnd() * 12, cx: -2 + rnd() * 4, cz: -6 + rnd() * 4, sp: (0.04 + rnd() * 0.06) * (rnd() < 0.5 ? -1 : 1) });
-      }
-      // 계단에 앉은 아이들
-      for (let i = 0; i < 4; i++) {
-        const k = makeChild(); sitPose(k, 0.36); k.root.position.set(10.3, 0, -3 + i * 0.9); k.root.rotation.y = -Math.PI / 2;
-        k.armA.rotation.x = -0.5; world.add(k.root);
-      }
+      [['piggyback', 1.3, 1], ['hood_a', 1.25, 1], ['hood_b', 1.25, -1], ['walk_couple', 1.25, 1], ['stick_boy', 1.3, 1],
+       ['leap_run', 1.2, 1], ['blind_girl', 1.3, -1], ['hoop_girl', 1.15, 1], ['basket_girls', 1.0, 1], ['hood_a', 1.25, 1]].forEach(([n, h, faces]) => {
+        const f = figure(n, h, { faces });
+        world.add(f.root);
+        strollers.push({ k: f, a: rnd() * 6.28, r: 4 + rnd() * 12, cx: -2 + rnd() * 4, cz: -6 + rnd() * 4, sp: (0.04 + rnd() * 0.06) * (rnd() < 0.5 ? -1 : 1) });
+      });
+      // 시청 계단에 앉은 아이들
+      [['crouch_girl', 0.85], ['marbles', 0.95]].forEach(([n, h], i) => {
+        const f = figure(n, h); f.root.position.set(10.3, 0, -2.5 + i * 1.6); world.add(f.root);
+      });
 
       this.updaters = updaters; this.strollers = strollers;
 
@@ -852,12 +614,12 @@
         const a = s.a + t * s.sp * (12 / s.r);
         const x = s.cx + Math.cos(a) * s.r, z = s.cz + Math.sin(a) * s.r * 0.7;
         s.k.root.position.set(x, 0, z);
-        faceAlong(s.k.root, -Math.sin(a) * Math.sign(s.sp), Math.cos(a) * 0.7 * Math.sign(s.sp));
-        walkPose(s.k, t + i, 0.6, 0.4);
+        hop(s.k, t + i, 5, 0.04);
       });
       // 라벨: 머리를 향해 돌고, 가까우면 설명판
       const cam = this.el.camera; if (!cam) return;
       cam.getWorldPosition(this.camWorld);
+      updateFigures(this.camWorld);
       stations.forEach(s => {
         const dx = this.camWorld.x - s.x, dz = this.camWorld.z - s.z;
         const d = Math.hypot(dx, dz), yaw = Math.atan2(dx, dz);
