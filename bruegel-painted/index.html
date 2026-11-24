@@ -1,0 +1,957 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>브뤼헐의 놀이터 VR</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="피터르 브뤼헐(1560) 〈아이들의 놀이〉 속으로 들어가 아이들의 놀이를 가까이서 보는 WebXR 체험 (Meta Quest 3 지원)">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@400;600&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-v1.6.0.min.js"></script>
+<script>
+/* =========================================================================
+   브뤼헐의 놀이터 — A-Frame 1.6 / WebXR
+   장면 전체를 THREE.js 메시로 직접 만들어 퀘스트 3에서 가볍게 돌아가게 했다.
+   ========================================================================= */
+(function () {
+  const THREE = AFRAME.THREE;
+
+  /* ---------- 색: 브뤼헐 팔레트 ---------- */
+  const PAL = {
+    red: 0xa8322a, vermilion: 0xc0492b, blue: 0x3f5f86, slate: 0x55687a,
+    green: 0x55703c, olive: 0x7a7a3a, ochre: 0xc49a45, white: 0xe9e2cf,
+    brown: 0x6b4a2b, dark: 0x3a2c22, pink: 0xc98a73, grey: 0x8c857a,
+    skin: 0xe3b48f, skin2: 0xd9a27c, wood: 0x8a6239, hay: 0xd6b765,
+  };
+  const matCache = {};
+  function mat(c) {
+    return matCache[c] || (matCache[c] = new THREE.MeshLambertMaterial({ color: c, flatShading: true }));
+  }
+
+  /* 결정적 난수 (매번 같은 광장) */
+  let seed = 1560;
+  function rnd() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+  function pick(a) { return a[Math.floor(rnd() * a.length)]; }
+
+  /* ---------- 작은 도구들 ---------- */
+  function mesh(geo, color, x = 0, y = 0, z = 0) { const m = new THREE.Mesh(geo, mat(color)); m.position.set(x, y, z); return m; }
+  function stick(len, color = PAL.wood, r = 0.018) { return new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, 5), mat(color)); }
+
+  /* =========================================================================
+     그림 속 아이들: 원화(1560, 퍼블릭 도메인)에서 한 명씩 오려 낸 컷아웃.
+     figures.webp 한 장(아틀라스)에 모두 들어 있고, 언제나 관람자를 향해 선다.
+     ATLAS[이름] = [u, v(위), 폭, 높이, 가로/세로 비]
+     ========================================================================= */
+  const ATLAS = {"knuckle_a":[0.0,0.0,0.09229,0.28672,0.515],"barrel":[0.09521,0.0,0.11377,0.28203,0.6454],"bladder":[0.21191,0.0,0.08447,0.28125,0.4806],"hood_b":[0.29932,0.0,0.06689,0.27813,0.3848],"hood_a":[0.36914,0.0,0.08057,0.275,0.4688],"hoop_girl":[0.45264,0.0,0.12549,0.27422,0.7322],"hoop_boy":[0.58105,0.0,0.12158,0.27188,0.7155],"joust_a":[0.70557,0.0,0.21777,0.25391,1.3723],"joust_b":[0.0,0.29141,0.1709,0.23984,1.1401],"wedding":[0.17383,0.29141,0.18408,0.2375,1.2401],"leap_pair":[0.36084,0.29141,0.104,0.225,0.7396],"blind_girl":[0.46777,0.29141,0.08936,0.22109,0.6466],"blind_boy":[0.56006,0.29141,0.09912,0.21797,0.7276],"knuckle_b":[0.66211,0.29141,0.16748,0.21328,1.2564],"walk_couple":[0.83252,0.29141,0.12646,0.21016,0.9628],"handstand":[0.0,0.53594,0.08398,0.20078,0.6693],"leap_run":[0.08691,0.53594,0.09424,0.2,0.7539],"stick_boy":[0.18408,0.53594,0.05566,0.19766,0.4506],"piggyback":[0.24268,0.53594,0.13965,0.18906,1.1818],"basket_girls":[0.38525,0.53594,0.16162,0.1875,1.3792],"blind_it":[0.5498,0.53594,0.08057,0.1875,0.6875],"crouch_girl":[0.6333,0.53594,0.08936,0.1875,0.7625],"fence_sit":[0.72559,0.53594,0.12451,0.1875,1.0625],"hobby_b":[0.85303,0.53594,0.11523,0.1875,0.9833],"marbles":[0.0,0.74141,0.11914,0.1875,1.0167],"pinwheel":[0.12207,0.74141,0.05566,0.1875,0.475],"rail_flip":[0.18066,0.74141,0.08887,0.1875,0.7583],"stilts":[0.27246,0.74141,0.0542,0.1875,0.4625],"tops_pair":[0.32959,0.74141,0.09717,0.1875,0.8292],"tops_whip":[0.42969,0.74141,0.04736,0.1875,0.4042],"tree_climb":[0.47998,0.74141,0.04199,0.1875,0.3583],"spin_a":[0.5249,0.74141,0.11523,0.125,1.475],"swim_sit":[0.64307,0.74141,0.0625,0.12188,0.8205],"spin_b":[0.7085,0.74141,0.11035,0.11563,1.527],"swim_float":[0.82178,0.74141,0.10645,0.06719,2.5349]};
+  const FIG_TEX = new THREE.TextureLoader().load('figures.webp');
+  FIG_TEX.colorSpace = THREE.SRGBColorSpace; FIG_TEX.anisotropy = 4;
+  const FIG_MAT = new THREE.MeshBasicMaterial({ map: FIG_TEX, alphaTest: 0.45, alphaToCoverage: true, side: THREE.DoubleSide });
+  const SHADOW_MAT = new THREE.MeshBasicMaterial({ color: 0x2a1d12, transparent: true, opacity: 0.28, depthWrite: false });
+  const SHADOW_GEO = new THREE.CircleGeometry(0.5, 16).rotateX(-Math.PI / 2);
+  const FIGURES = [];
+
+  /* 그림 인물 하나. 원점 = 발밑.
+     root(위치) → bb(관람자 쪽으로 회전) → sprite(흔들기·뒤집기) → 메시
+     faces: 그림에서 인물이 보는 쪽(+1 오른쪽, -1 왼쪽). 움직이는 방향에 맞춰 좌우를 뒤집는다. */
+  function figure(name, h, o = {}) {
+    const [u, v, w, hh, asp] = ATLAS[name];
+    const W = h * asp;
+    const geo = new THREE.PlaneGeometry(W, h).translate(0, h / 2, 0);
+    const uv = geo.attributes.uv;
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, u + uv.getX(i) * w, 1 - (v + (1 - uv.getY(i)) * hh));
+    const root = new THREE.Group(), bb = new THREE.Group(), sprite = new THREE.Group();
+    root.add(bb); bb.add(sprite); sprite.add(new THREE.Mesh(geo, FIG_MAT));
+    if (o.shadow !== false) {
+      const sh = new THREE.Mesh(SHADOW_GEO, SHADOW_MAT);
+      sh.scale.set(Math.min(W, 1.4) * 0.8, 1, 0.45); sh.position.y = 0.012; root.add(sh); root.shadow = sh;
+    }
+    const f = { root, bb, sprite, h, w: W, faces: o.faces || 1, dir: 1, flip: o.faces || 1, prev: null };
+    FIGURES.push(f);
+    return f;
+  }
+  /* 움직임 표현: 통통 튀기, 좌우로 기우뚱 */
+  function hop(f, t, speed = 7, amp = 0.05) { f.sprite.position.y = Math.abs(Math.sin(t * speed)) * amp; f.sprite.rotation.z = Math.sin(t * speed) * 0.05; }
+  function sway(f, t, speed = 2, amp = 0.06) { f.sprite.rotation.z = Math.sin(t * speed) * amp; }
+  function breathe(f, t, speed = 2, amp = 0.025) { f.sprite.scale.y = 1 + Math.sin(t * speed) * amp; }
+
+  const _cam = new THREE.Vector3(), _p = new THREE.Vector3();
+  function updateFigures(camPos) {
+    for (let i = 0; i < FIGURES.length; i++) {
+      const f = FIGURES[i];
+      f.root.getWorldPosition(_p);
+      const yaw = Math.atan2(camPos.x - _p.x, camPos.z - _p.z);
+      f.bb.rotation.y = yaw;
+      if (f.prev) {
+        // 화면 기준 오른쪽(+)/왼쪽(-)으로 움직이는지 보고 그림을 좌우로 뒤집는다
+        const dx = _p.x - f.prev.x, dz = _p.z - f.prev.z;
+        const side = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+        if (Math.abs(side) > 0.002) f.dir = side > 0 ? 1 : -1;
+        f.prev.copy(_p);
+      } else f.prev = _p.clone();
+      // 뒤집을 때는 종이 인형처럼 빠르게 휙 돌아선다
+      f.flip += ((f.dir * f.faces) - f.flip) * 0.3;
+      f.sprite.scale.x = Math.abs(f.flip) < 0.15 ? (f.flip < 0 ? -0.15 : 0.15) : f.flip;
+    }
+  }
+
+  /* =========================================================================
+     놀이 정의: 위치, 이름, 설명, 만들기(setup) → 매 프레임 갱신 함수
+     ========================================================================= */
+  const GAMES = [
+    {
+      id: 'hoop', name: '굴렁쇠 굴리기', pos: [-3, 1.5],
+      desc: '막대로 나무 테를 밀며 광장을 달립니다. 그림 아래쪽 가운데, 빨간 바지 소년과 초록 옷 아이가 굴렁쇠를 굴려요.',
+      setup(g) {
+        const kids = [figure('hoop_boy', 1.2, { faces: -1 }), figure('hoop_girl', 1.15, { faces: 1 })];
+        const hoops = kids.map(k => {
+          g.add(k.root);
+          const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.4, 0.022, 6, 28), mat(0x5a3b22));
+          g.add(hoop); return hoop;
+        });
+        const watcher = figure('crouch_girl', 0.85); watcher.root.position.set(0.4, 0, 0.3); g.add(watcher.root);
+        return (t) => {
+          kids.forEach((k, i) => {
+            const R = 2.6 - i * 0.9, sp = 0.6 + i * 0.2, a = t * sp + i * 2;
+            k.root.position.set(Math.cos(a) * R, 0, Math.sin(a) * R);
+            hop(k, t + i, 6.5, 0.06);
+            const ha = a + 0.33, h = hoops[i];
+            h.position.set(Math.cos(ha) * (R + 0.15), 0.4, Math.sin(ha) * (R + 0.15));
+            h.rotation.set(0, Math.atan2(-Math.sin(ha), Math.cos(ha)) + Math.PI / 2, 0);
+            h.rotateZ(-t * sp * R / 0.4);
+          });
+          breathe(watcher, t, 1.5);
+        };
+      },
+    },
+    {
+      id: 'leapfrog', name: '등 넘기 (말뚝박기)', pos: [3.5, -3.5],
+      desc: '한 아이가 허리를 굽히면 다른 아이가 등을 짚고 훌쩍 뛰어넘어요. 다음 차례 아이가 달려옵니다.',
+      setup(g) {
+        const pair = figure('leap_pair', 1.6); g.add(pair.root);
+        const runner = figure('leap_run', 1.2, { faces: 1 }); g.add(runner.root);
+        return (t) => {
+          const p = (t * 0.3) % 1;
+          // 등 짚고 넘는 순간: 위로 살짝 솟았다가 내려앉기
+          const jump = Math.max(0, Math.sin(t * 2.2));
+          pair.sprite.position.y = jump * 0.12; pair.sprite.rotation.z = -jump * 0.04;
+          runner.root.position.set(-3 + p * 2.3, 0, 0.6);
+          runner.root.visible = p < 0.97;
+          hop(runner, t, 8, 0.07);
+        };
+      },
+    },
+    {
+      id: 'stilts', name: '죽마 타기', pos: [-7.5, -5.5],
+      desc: '긴 나무다리 위에 올라서서 뒤뚱뒤뚱 걸어요. 그림 오른쪽 가운데, 망토를 두른 아이가 죽마를 타고 있습니다.',
+      setup(g) {
+        const k = figure('stilts', 1.8, { faces: 1 }); g.add(k.root);
+        const friend = figure('stick_boy', 1.3); friend.root.position.set(1.4, 0, -0.8); g.add(friend.root);
+        return (t) => {
+          const p = (t * 0.12) % 2, u = p < 1 ? p : 2 - p;
+          k.root.position.set((u - 0.5) * 3, 0, 0.3);
+          k.sprite.rotation.z = Math.sin(t * 2.2) * 0.07;
+          k.sprite.position.y = Math.abs(Math.sin(t * 2.2)) * 0.04;
+          sway(friend, t, 1.2, 0.04);
+        };
+      },
+    },
+    {
+      id: 'tops', name: '팽이 치기', pos: [1.5, 3.2],
+      desc: '채찍으로 팽이를 쳐서 계속 돌게 해요. 그림 가운데 시청 아치 아래에서 아이들이 팽이를 칩니다.',
+      setup(g) {
+        const tops = [];
+        for (let i = 0; i < 3; i++) {
+          const top = new THREE.Group();
+          top.add(mesh(new THREE.ConeGeometry(0.09, 0.16, 10).rotateX(Math.PI), [PAL.red, PAL.ochre, PAL.blue][i], 0, 0.08, 0));
+          top.add(mesh(new THREE.CylinderGeometry(0.092, 0.092, 0.04, 10), PAL.wood, 0, 0.17, 0));
+          g.add(top); tops.push(top);
+        }
+        const whip = figure('tops_whip', 1.25); whip.root.position.set(-0.9, 0, 0); g.add(whip.root);
+        const pair = figure('tops_pair', 1.25); pair.root.position.set(1.0, 0, -0.5); g.add(pair.root);
+        return (t) => {
+          tops.forEach((top, i) => {
+            const a = i * 2.1 + t * 0.4;
+            top.position.set(Math.cos(a) * 0.55 + (i - 1) * 0.3, 0, Math.sin(a) * 0.4 + 0.5);
+            top.rotation.set(Math.sin(t * 3 + i) * 0.15, t * 18, Math.cos(t * 3 + i) * 0.15);
+          });
+          // 채찍을 내려치는 순간 몸이 앞으로 쏠린다
+          const s = Math.max(0, Math.sin(t * 3.5));
+          whip.sprite.rotation.z = -s * 0.1; pair.sprite.rotation.z = Math.max(0, Math.sin(t * 3.5 + 1.5)) * 0.08;
+        };
+      },
+    },
+    {
+      id: 'blind', name: '눈 가리고 술래잡기', pos: [6.5, 2],
+      desc: '눈을 가린 술래(노란 옷)가 두 팔을 뻗고 더듬거리면, 친구들은 놀리며 이리저리 피해 다녀요.',
+      setup(g) {
+        const it = figure('blind_it', 1.2, { faces: -1 }); g.add(it.root);
+        const others = [figure('blind_girl', 1.3, { faces: -1 }), figure('blind_boy', 1.25, { faces: -1 })];
+        others.forEach(k => g.add(k.root));
+        return (t) => {
+          it.root.position.set(Math.sin(t * 0.3) * 0.8, 0, Math.cos(t * 0.23) * 0.5);
+          sway(it, t, 1.6, 0.08);
+          others.forEach((k, i) => {
+            const a = t * 0.35 * (i ? -1 : 1) + i * Math.PI;
+            const r = 2 + Math.sin(t * 1.4 + i * 2) * 0.5;
+            k.root.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+            hop(k, t + i, 5, 0.05);
+          });
+        };
+      },
+    },
+    {
+      id: 'knuckle', name: '공기놀이', pos: [-5, 3],
+      desc: '양의 발목뼈(공깃돌)를 던져 올리고 받는 놀이예요. 그림 왼쪽 아래 구석에서 두 소녀가 마주 앉아 놀고 있습니다.',
+      setup(g) {
+        const a = figure('knuckle_a', 1.15); a.root.position.set(-0.7, 0, 0); g.add(a.root);
+        const b = figure('knuckle_b', 1.0); b.root.position.set(0.75, 0, -0.1); g.add(b.root);
+        const bones = [];
+        for (let i = 0; i < 5; i++) {
+          const bn = mesh(new THREE.BoxGeometry(0.04, 0.03, 0.05), PAL.white, (i - 2) * 0.07, 0.015, 0.25 + (i % 2) * 0.05);
+          g.add(bn); bones.push(bn);
+        }
+        return (t) => {
+          const p = (t % 1.6) / 1.6, toss = Math.sin(p * Math.PI);
+          bones[2].position.set(0.1, 0.1 + toss * 0.6, 0.25);
+          b.sprite.rotation.z = toss * 0.05; breathe(a, t, 1.7);
+        };
+      },
+    },
+    {
+      id: 'handstand', name: '물구나무서기', pos: [-1, -7.5],
+      desc: '두 손으로 땅을 짚고 거꾸로 서요. 그림 왼쪽 빨간 울타리 앞 풀밭에서 한 아이가 다리를 흔들고 있어요.',
+      setup(g) {
+        const k = figure('handstand', 1.3); g.add(k.root);
+        return (t) => { k.sprite.rotation.z = Math.sin(t * 1.7) * 0.06; k.sprite.position.x = Math.sin(t * 1.1) * 0.03; };
+      },
+    },
+    {
+      id: 'joust', name: '말타기 겨루기', pos: [4.5, -11],
+      desc: '한 아이가 말이 되고 다른 아이가 등에 올라타, 상대편 기수를 밀고 당겨 떨어뜨리는 겨루기예요. 그림 한가운데에 있어요.',
+      setup(g) {
+        const A = figure('joust_a', 1.4, { faces: 1 }), B = figure('joust_b', 1.5, { faces: -1 });
+        g.add(A.root); g.add(B.root);
+        return (t) => {
+          const c = Math.max(0, -Math.sin(t * 0.9));
+          A.root.position.set(-(1.1 + c * 1.6), 0, 0); B.root.position.set(1.1 + c * 1.6, 0, 0.2);
+          A.dir = 1; B.dir = 1;
+          hop(A, t, 4, 0.04); hop(B, t + 1, 4, 0.04);
+        };
+      },
+    },
+    {
+      id: 'barrel', name: '술통 타기', pos: [8.3, -5.5],
+      desc: '커다란 술통에 말 타듯 올라앉아 흔들어요. 그림 오른쪽 아래, 빨간 옷 아이가 친구를 술통 위로 끌어올립니다.',
+      setup(g) {
+        const k = figure('barrel', 1.75); g.add(k.root);
+        return (t) => { k.sprite.rotation.z = Math.sin(t * 2.2) * 0.05; };
+      },
+    },
+    {
+      id: 'bladder', name: '오줌보 풍선 불기', pos: [-8.5, -0.5],
+      desc: '돼지 오줌보를 풍선처럼 불어 부풀려요. 그림 아래쪽, 흰 두건을 쓴 아이가 커다란 오줌보를 껴안고 붑니다.',
+      setup(g) {
+        const k = figure('bladder', 1.25); g.add(k.root);
+        return (t) => { const p = (t % 3) / 3; k.sprite.scale.y = 1 + Math.sin(p * Math.PI) * 0.03; k.sprite.rotation.z = Math.sin(t * 1.3) * 0.03; };
+      },
+    },
+    {
+      id: 'hobby', name: '막대말 타기와 바람개비', pos: [-4.5, -12],
+      desc: '막대를 다리 사이에 끼고 말처럼 달려요. 그림 위쪽, 긴 막대에 바람개비를 단 소녀도 함께 뛰어놉니다.',
+      setup(g) {
+        const kids = [figure('hobby_b', 1.1, { faces: -1 }), figure('pinwheel', 1.2, { faces: -1 })];
+        kids.forEach(k => g.add(k.root));
+        return (t) => kids.forEach((k, i) => {
+          const a = t * 0.5 * (i ? -1 : 1) + i * 2.1, R = 1.7 + i * 0.5;
+          k.root.position.set(Math.cos(a) * R, 0, Math.sin(a) * R);
+          hop(k, t + i, 7, 0.07);
+        });
+      },
+    },
+    {
+      id: 'ring', name: '치마 부풀리기 (빙글빙글)', pos: [1, -16],
+      desc: '소녀들이 제자리에서 빙글빙글 돌다가 털썩 주저앉으면 치마가 동그랗게 부풀어요. 그림 왼쪽 위 풀밭의 빨간 치마 두 소녀예요.',
+      setup(g) {
+        const A = figure('spin_a', 0.75), B = figure('spin_b', 0.7);
+        A.root.position.set(-0.7, 0, 0); B.root.position.set(0.7, 0, -0.3);
+        g.add(A.root); g.add(B.root);
+        return (t) => {
+          [A, B].forEach((k, i) => {
+            const p = Math.sin(t * 1.5 + i * 1.7);
+            k.sprite.scale.y = 1 + p * 0.06; k.sprite.rotation.z = Math.sin(t * 3 + i) * 0.03;
+          });
+        };
+      },
+    },
+    {
+      id: 'rail', name: '난간 돌기', pos: [-12, -14],
+      desc: '나무 난간을 붙잡고 몸을 거꾸로 넘겨요. 그림 가운데 시청 앞 나무 틀에서 빨간 바지 아이가 매달려 돌고, 옆에서는 아이들이 울타리에 올라앉아 막대를 흔듭니다.',
+      setup(g) {
+        const fenceH = 0.9;
+        [-1.6, 1.6].forEach(x => g.add(mesh(new THREE.BoxGeometry(0.12, fenceH + 0.1, 0.12).translate(0, (fenceH + 0.1) / 2, 0), PAL.wood, x, 0, -0.6)));
+        g.add(mesh(new THREE.BoxGeometry(3.4, 0.1, 0.1), 0xa0402c, 0, fenceH, -0.6));
+        g.add(mesh(new THREE.BoxGeometry(3.4, 0.08, 0.06), 0xa0402c, 0, 0.35, -0.6));
+        const flip = figure('rail_flip', 1.55); flip.root.position.set(-1.2, 0, 0.3); g.add(flip.root);
+        const sit = figure('fence_sit', 1.3); sit.root.position.set(0.6, fenceH - 0.55, -0.55); sit.root.shadow.visible = false; g.add(sit.root);
+        return (t) => {
+          flip.sprite.rotation.z = Math.sin(t * 1.8) * 0.08;
+          sit.sprite.position.y = Math.abs(Math.sin(t * 3)) * 0.04;
+        };
+      },
+    },
+    {
+      id: 'wedding', name: '결혼식 행렬 놀이', pos: [8.5, -16.5],
+      desc: '어른들의 결혼식을 흉내 내는 행렬이에요. 그림 가운데, 종이 관을 쓴 신부를 둘러싸고 아이들이 천천히 걸어갑니다. 바구니를 든 소녀가 뒤따라요.',
+      setup(g) {
+        const bride = figure('wedding', 1.5), basket = figure('basket_girls', 1.0), couple = figure('walk_couple', 1.25);
+        [bride, basket, couple].forEach(k => g.add(k.root));
+        return (t) => [bride, basket, couple].forEach((k, i) => {
+          const a = t * 0.08 - i * 0.55;
+          k.root.position.set(Math.cos(a) * 2.6, 0, Math.sin(a) * 1.4);
+          hop(k, t + i, 3, 0.025);
+        });
+      },
+    },
+    {
+      id: 'tree', name: '나무 타기', pos: [-14, -23],
+      desc: '그림 왼쪽 위 강가의 나무에 한 아이가 줄기를 끌어안고 기어오르고 있어요.',
+      setup(g) {
+        const tree = makeTree(4.6, 1.9, PAL.green); g.add(tree);
+        const k = figure('tree_climb', 1.25, { shadow: false }); k.root.position.z = 0.25; g.add(k.root);
+        return (t) => {
+          const p = (t * 0.15) % 2, u = p < 1 ? p : 2 - p;
+          k.root.position.y = 0.2 + u * 0.9;
+          k.sprite.rotation.z = Math.sin(t * 4) * 0.03;
+        };
+      },
+    },
+    {
+      id: 'swim', name: '강에서 헤엄치기', pos: [-21, -28],
+      desc: '그림 왼쪽 위 강가에서는 아이들이 옷을 벗고 물놀이를 합니다. 물가에 앉은 아이, 물 위에 둥둥 뜬 아이가 보여요.',
+      setup(g) {
+        const sitter = figure('swim_sit', 0.9); sitter.root.position.set(-2.2, 0, 3.3); g.add(sitter.root);
+        const floaters = [0, 1].map(i => { const k = figure('swim_float', 0.42, { shadow: false, faces: -1 }); g.add(k.root); return k; });
+        return (t) => {
+          floaters.forEach((k, i) => {
+            const a = t * 0.12 + i * 3, R = 2 + i;
+            k.root.position.set(Math.cos(a) * R, -0.18 + Math.sin(t * 2 + i) * 0.03, Math.sin(a) * R * 0.6);
+            k.sprite.rotation.z = Math.sin(t * 3 + i) * 0.05;
+          });
+          breathe(sitter, t, 1.4);
+        };
+      },
+    },
+    {
+      id: 'marbles', name: '구슬치기', pos: [-9.5, -8.5],
+      desc: '쪼그려 앉아 손가락으로 구슬을 튕겨 구멍에 넣거나 상대 구슬을 맞히는 놀이예요. 그림 오른쪽 위에서 두 아이가 몸을 숙여 구슬을 굴립니다.',
+      setup(g) {
+        const k = figure('marbles', 1.0); k.root.position.set(-0.4, 0, -0.4); g.add(k.root);
+        const hole = mesh(new THREE.CircleGeometry(0.08, 10).rotateX(-Math.PI / 2), PAL.dark, 0.6, 0.005, 0.3); g.add(hole);
+        const marbles = [PAL.red, PAL.blue, PAL.white, PAL.ochre].map(c => { const m = mesh(new THREE.SphereGeometry(0.025, 8, 6), c, 0, 0.025, 0); g.add(m); return m; });
+        return (t) => {
+          const p = (t % 2.4) / 2.4;
+          marbles.forEach((m, i) => {
+            if (i === 0) { const u = Math.min(1, p * 1.5); m.position.set(0.0 + u * 0.6, 0.025, 0.0 + u * 0.3); }
+            else { const a = i * 2 + 0.5; m.position.set(0.6 + Math.cos(a) * 0.3, 0.025, 0.3 + Math.sin(a) * 0.25); }
+          });
+          k.sprite.rotation.z = p < 0.15 ? -p * 0.4 : 0;
+        };
+      },
+    },
+  ];
+
+
+  /* ---------- 나무 ---------- */
+  function makeTree(h = 4, r = 1.6, color = PAL.green) {
+    const t = new THREE.Group();
+    t.add(mesh(new THREE.CylinderGeometry(0.14, 0.22, h * 0.6, 7).translate(0, h * 0.3, 0), PAL.brown));
+    const leaf = mat(color), leaf2 = mat(PAL.olive);
+    [[0, h * 0.72, 0, r], [r * 0.5, h * 0.62, 0.2, r * 0.7], [-r * 0.45, h * 0.66, -0.2, r * 0.75], [0.1, h * 0.92, 0.1, r * 0.6]].forEach(([x, y, z, rr], i) => {
+      const s = new THREE.Mesh(new THREE.IcosahedronGeometry(rr, 0), i % 2 ? leaf2 : leaf);
+      s.position.set(x, y, z); s.rotation.set(i, i * 2, 0); t.add(s);
+    });
+    return t;
+  }
+
+  /* ---------- 건물 ---------- */
+  function gableHouse(w, h, d, wallC, roofC) {
+    const g = new THREE.Group();
+    g.add(mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), wallC));
+    // 계단식 박공 (플랑드르 양식)
+    const steps = 4;
+    for (let i = 0; i < steps; i++) {
+      const sw = w * (1 - (i + 1) / (steps + 1));
+      g.add(mesh(new THREE.BoxGeometry(sw, w * 0.18, 0.3).translate(0, h + w * 0.09 + i * w * 0.18, d / 2 - 0.15), wallC));
+    }
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.01, w * 0.62, d, 4, 1).rotateX(Math.PI / 2).rotateZ(Math.PI / 4), mat(roofC));
+    roof.scale.set(1, steps * 0.18 * 1.25, 1); roof.position.y = h; g.add(roof);
+    // 창문
+    const win = new THREE.BoxGeometry(w * 0.18, h * 0.16, 0.05);
+    for (let fy = 0; fy < Math.max(1, Math.floor(h / 2.6)); fy++) {
+      for (let fx = -1; fx <= 1; fx += 2) g.add(mesh(win, PAL.dark, fx * w * 0.24, 1.6 + fy * 2.4, d / 2 + 0.02));
+    }
+    g.add(mesh(new THREE.BoxGeometry(w * 0.22, 1.7, 0.05), 0x4a3424, 0, 0.85, d / 2 + 0.02));
+    return g;
+  }
+
+  function townHall() {
+    // 그림 오른쪽을 가득 채우는 커다란 벽돌 건물
+    const g = new THREE.Group();
+    const L = 34, H = 9.5, D = 8;
+    g.add(mesh(new THREE.BoxGeometry(D, H, L).translate(0, H / 2, 0), 0x9b4a32));
+    g.add(mesh(new THREE.BoxGeometry(D + 0.3, 0.35, L + 0.3).translate(0, H, 0), 0xb8a68a));
+    const roof = new THREE.Mesh(new THREE.CylinderGeometry(0.01, D * 0.72, L, 4).rotateX(Math.PI / 2).rotateZ(Math.PI / 4), mat(0x4f4a48));
+    roof.scale.set(1, 0.8, 1); roof.position.y = H + 0.2; g.add(roof);
+    // 아치 회랑과 창
+    const arch = new THREE.BoxGeometry(0.1, 2.8, 1.8), win = new THREE.BoxGeometry(0.1, 1.5, 0.9), trim = new THREE.BoxGeometry(0.12, 0.25, 2.2);
+    for (let z = -L / 2 + 2.5; z < L / 2 - 1; z += 3.2) {
+      g.add(mesh(arch, 0x2d211a, -D / 2 - 0.02, 1.4, z));
+      g.add(mesh(trim, 0xcbb994, -D / 2 - 0.03, 2.85, z));
+      g.add(mesh(win, 0x2b2b30, -D / 2 - 0.02, 4.8, z));
+      g.add(mesh(win, 0x2b2b30, -D / 2 - 0.02, 7.3, z));
+    }
+    // 앞 계단 (아이들이 걸터앉는 곳)
+    for (let i = 0; i < 3; i++) g.add(mesh(new THREE.BoxGeometry(1.2 - i * 0.35, 0.18, 6), 0xb8a68a, -D / 2 - 0.6 + i * 0.17, 0.09 + i * 0.18, 6));
+    return g;
+  }
+
+  const redraws = [];
+  /* ---------- 라벨 (캔버스 텍스처 — 한글 표시용) ---------- */
+  function wrapText(ctx, text, maxW) {
+    const out = []; let line = '';
+    for (const ch of text) {
+      const test = line + ch;
+      if (ctx.measureText(test).width > maxW && line) { out.push(line); line = ch === ' ' ? '' : ch; }
+      else line = test;
+    }
+    if (line) out.push(line);
+    return out;
+  }
+  function makeLabel(num, title, desc) {
+    const W = 1024, Hh = 520;
+    const c = document.createElement('canvas'); c.width = W; c.height = Hh;
+    const x = c.getContext('2d');
+    const draw1 = () => {
+    x.fillStyle = '#efe4cc'; x.fillRect(0, 0, W, Hh);
+    x.strokeStyle = '#6b4a2b'; x.lineWidth = 10; x.strokeRect(5, 5, W - 10, Hh - 10);
+    x.fillStyle = '#9b3f2a'; x.font = '600 34px "Noto Sans KR", sans-serif';
+    x.fillText(String(num).padStart(2, '0') + ' / ' + GAMES.length, 48, 74);
+    x.fillStyle = '#2b2118'; x.font = '700 76px "Gowun Batang", serif';
+    x.fillText(title, 48, 170);
+    x.fillStyle = '#3d3024'; x.font = '400 40px "Noto Sans KR", sans-serif';
+    wrapText(x, desc, W - 96).slice(0, 5).forEach((l, i) => x.fillText(l, 48, 250 + i * 58));
+    };
+    draw1();
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6 * Hh / W), new THREE.MeshBasicMaterial({ map: tex, transparent: true, fog: false }));
+    // 짧은 이름표
+    const c2 = document.createElement('canvas'); c2.width = 640; c2.height = 128;
+    const y = c2.getContext('2d');
+    const draw2 = () => {
+    y.clearRect(0, 0, 640, 128);
+    y.fillStyle = 'rgba(43,33,24,0.86)'; y.fillRect(0, 0, 640, 128);
+    y.fillStyle = '#efe4cc'; y.font = '700 58px "Gowun Batang", serif'; y.textAlign = 'center'; y.textBaseline = 'middle';
+    y.fillText(title, 320, 66);
+    };
+    draw2();
+    const t2 = new THREE.CanvasTexture(c2); t2.colorSpace = THREE.SRGBColorSpace;
+    const tag = new THREE.Mesh(new THREE.PlaneGeometry(1.2, 0.24), new THREE.MeshBasicMaterial({ map: t2, transparent: true, fog: false }));
+    redraws.push(() => { draw1(); tex.needsUpdate = true; draw2(); t2.needsUpdate = true; });
+    return { panel: m, tag };
+  }
+
+  /* ---------- 그림 텍스처: 로컬 파일 → 위키미디어 → 손그림 대체 ---------- */
+  const PAINTING_SOURCES = [
+    'childrens-games.jpg',
+    'https://upload.wikimedia.org/wikipedia/commons/thumb/1/1e/Pieter_Bruegel_the_Elder_-_Children%E2%80%99s_Games_-_Google_Art_Project.jpg/1920px-Pieter_Bruegel_the_Elder_-_Children%E2%80%99s_Games_-_Google_Art_Project.jpg',
+  ];
+  function fallbackPainting() {
+    // 원작 구도를 따라 그린 스케치: 오른쪽 벽돌 건물, 가운데로 뻗은 거리, 왼쪽 위 초록 들판과 강
+    const W = 1600, H = 1170, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const x = c.getContext('2d');
+    x.fillStyle = '#c4a46a'; x.fillRect(0, 0, W, H);
+    x.fillStyle = '#5f7a45'; x.beginPath(); x.moveTo(0, 0); x.lineTo(560, 0); x.lineTo(520, 160); x.lineTo(0, 300); x.fill();
+    x.fillStyle = '#7d9aa0'; x.beginPath(); x.moveTo(0, 120); x.quadraticCurveTo(250, 140, 470, 70); x.lineTo(480, 100); x.quadraticCurveTo(250, 180, 0, 170); x.fill();
+    x.fillStyle = '#cdd5cf'; x.fillRect(560, 0, 380, 70);
+    x.fillStyle = '#9b4a32'; x.beginPath(); x.moveTo(940, 0); x.lineTo(W, 0); x.lineTo(W, 900); x.lineTo(1180, 560); x.lineTo(960, 120); x.fill();
+    x.fillStyle = '#2d211a'; for (let i = 0; i < 7; i++) { const t = i / 7; x.fillRect(1000 + t * 520, 150 + t * 600, 40 + t * 40, 60 + t * 90); }
+    x.fillStyle = '#a0634a'; for (let i = 0; i < 8; i++) x.fillRect(560 + i * 45, 40 + i * 6, 40, 90 - i * 4);
+    x.fillStyle = '#b07a52'; x.fillRect(0, 300, 260, 260);
+    const cols = ['#a8322a', '#3f5f86', '#55703c', '#e9e2cf', '#c49a45', '#3a2c22', '#c0492b'];
+    let s = 7; const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 520; i++) {
+      const yy = 120 + r() * (H - 140), xx = r() * W;
+      if (xx > 960 + (yy - 120) * 0.45 && yy < 900) continue;
+      const sc = 0.4 + (yy / H) * 1.1;
+      x.fillStyle = cols[Math.floor(r() * cols.length)];
+      x.fillRect(xx, yy, 9 * sc, 18 * sc);
+      x.fillStyle = '#e3b48f'; x.beginPath(); x.arc(xx + 4.5 * sc, yy - 4 * sc, 4.5 * sc, 0, 7); x.fill();
+    }
+    x.fillStyle = 'rgba(43,33,24,.85)'; x.fillRect(0, H - 90, W, 90);
+    x.fillStyle = '#efe4cc'; x.font = '700 44px "Gowun Batang", serif';
+    x.fillText('〈아이들의 놀이〉 구도 스케치 — 원화 이미지는 childrens-games.jpg 로 넣을 수 있어요', 40, H - 32);
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; return tex;
+  }
+  function loadPainting(cb) {
+    const loader = new THREE.TextureLoader(); loader.setCrossOrigin('anonymous');
+    let i = 0;
+    (function next() {
+      if (i >= PAINTING_SOURCES.length) return cb(fallbackPainting(), false);
+      loader.load(PAINTING_SOURCES[i++], tex => { tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8; cb(tex, true); }, undefined, next);
+    })();
+  }
+
+  /* ---------- 땅 ---------- */
+  AFRAME.registerComponent('ground-surface', {
+    init() {
+      const c = document.createElement('canvas'); c.width = c.height = 512;
+      const x = c.getContext('2d');
+      x.fillStyle = '#b8955e'; x.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 2600; i++) {
+        const v = Math.floor(rnd() * 40);
+        x.fillStyle = `rgba(${90 + v},${70 + v},${40 + v},${0.12 + rnd() * 0.18})`;
+        x.fillRect(rnd() * 512, rnd() * 512, 2 + rnd() * 10, 2 + rnd() * 6);
+      }
+      const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(30, 30); tex.colorSpace = THREE.SRGBColorSpace;
+      const plaza = new THREE.Mesh(new THREE.PlaneGeometry(160, 160).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ map: tex }));
+      this.el.setObject3D('mesh', plaza);
+      this.el.addEventListener('click', e => {
+        if (!e.detail.intersection || window.__dragged) return;
+        const p = e.detail.intersection.point;
+        teleportTo(p.x, p.z, null);
+      });
+    },
+  });
+
+  /* ---------- 세계 만들기 ---------- */
+  let stations = [];
+  let labelsOn = true;
+
+  AFRAME.registerComponent('bruegel-world', {
+    init() {
+      const scene = this.el.object3D;
+      const world = new THREE.Group(); scene.add(world);
+
+      // 시청
+      const hall = townHall(); hall.position.set(15, 0, -8); world.add(hall);
+
+      // 가운데 뒤로 뻗은 거리
+      for (let i = 0; i < 9; i++) {
+        const z = -26 - i * 5.2;
+        const left = gableHouse(4.8, 5 + (i % 3), 5, [0xb07a52, 0xc9b28c, 0x9e6a4c][i % 3], [0x6a4b3a, 0x8a3d2c][i % 2]);
+        left.position.set(-1.5, 0, z); left.rotation.y = Math.PI / 2; world.add(left);
+        const right = gableHouse(4.8, 6 + (i % 2), 5, [0xc9b28c, 0xa0634a, 0xb99a70][i % 3], [0x5a4a42, 0x8a3d2c][i % 2]);
+        right.position.set(9, 0, z); right.rotation.y = -Math.PI / 2; world.add(right);
+      }
+      // 거리 끝 교회 탑
+      const tower = new THREE.Group();
+      tower.add(mesh(new THREE.BoxGeometry(3, 14, 3).translate(0, 7, 0), 0xa58c6c));
+      tower.add(mesh(new THREE.ConeGeometry(2.3, 6, 4).translate(0, 17, 0), 0x4f4a48));
+      tower.position.set(3.8, 0, -76); world.add(tower);
+
+      // 왼쪽 앞 집들
+      [[-16, 6, 0xb07a52], [-17, -1, 0xc9b28c], [-16.5, 15, 0x9e6a4c], [-6, 16, 0xb99a70], [4, 16.5, 0xa0634a]].forEach(([x, z, c], i) => {
+        const h = gableHouse(5, 5 + i % 2, 5.5, c, i % 2 ? 0x6a4b3a : 0x8a3d2c);
+        h.position.set(x, 0, z); h.rotation.y = i < 3 ? Math.PI / 2 : Math.PI; world.add(h);
+      });
+
+      // 왼쪽 뒤 초록 들판, 강, 나무
+      const field = mesh(new THREE.PlaneGeometry(40, 34).rotateX(-Math.PI / 2), 0x6c8a48, -26, 0.02, -34); world.add(field);
+      const river = new THREE.Mesh(new THREE.PlaneGeometry(26, 7).rotateX(-Math.PI / 2), new THREE.MeshLambertMaterial({ color: 0x7898a0, transparent: true, opacity: 0.92 }));
+      river.position.set(-21, 0.04, -27); river.rotation.y = 0.15; world.add(river);
+      this.river = river;
+      [[-12, -30], [-9, -38], [-16, -42], [-24, -20], [-30, -24], [-27, -36], [-34, -30], [-19, -46], [-11, -19], [-6, -42], [-36, -42]].forEach(([x, z], i) => {
+        const t = makeTree(4 + (i % 3), 1.5 + (i % 2) * 0.5, i % 3 ? PAL.green : 0x4a6a35); t.position.set(x, 0, z); world.add(t);
+      });
+      // 광장 앞의 나무 한 그루 (그림 가운데)
+      const mid = makeTree(5.5, 1.8); mid.position.set(-5.5, 0, -18); world.add(mid);
+
+      // 우물과 수레, 모래 더미
+      const well = new THREE.Group();
+      well.add(mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.8, 12).translate(0, 0.4, 0), 0xa59a8a));
+      well.add(mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.82, 12).translate(0, 0.41, 0), 0x2b2a2a));
+      well.position.set(-1, 0, -21); world.add(well);
+      const sand = mesh(new THREE.SphereGeometry(1.2, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0xd5b97a, -11, 0, 4); sand.scale.y = 0.35; world.add(sand);
+
+      // 놀이 스테이션
+      const updaters = [];
+      GAMES.forEach((game, i) => {
+        const g = new THREE.Group(); g.position.set(game.pos[0], 0, game.pos[1]); world.add(g);
+        updaters.push(game.setup(g));
+        const lbl = makeLabel(i + 1, game.name, game.desc);
+        lbl.panel.position.set(game.pos[0], 2.55, game.pos[1]);
+        lbl.tag.position.set(game.pos[0], 2.45, game.pos[1]);
+        world.add(lbl.panel); world.add(lbl.tag);
+        stations.push({ game, panel: lbl.panel, tag: lbl.tag, x: game.pos[0], z: game.pos[1] });
+      });
+
+      // 광장을 오가는 아이들 (그림 속 다른 아이들)
+      const strollers = [];
+      [['piggyback', 1.3, 1], ['hood_a', 1.25, 1], ['hood_b', 1.25, -1], ['walk_couple', 1.25, 1], ['stick_boy', 1.3, 1],
+       ['leap_run', 1.2, 1], ['blind_girl', 1.3, -1], ['hoop_girl', 1.15, 1], ['basket_girls', 1.0, 1], ['hood_a', 1.25, 1]].forEach(([n, h, faces]) => {
+        const f = figure(n, h, { faces });
+        world.add(f.root);
+        strollers.push({ k: f, a: rnd() * 6.28, r: 4 + rnd() * 12, cx: -2 + rnd() * 4, cz: -6 + rnd() * 4, sp: (0.04 + rnd() * 0.06) * (rnd() < 0.5 ? -1 : 1) });
+      });
+      // 시청 계단에 앉은 아이들
+      [['crouch_girl', 0.85], ['marbles', 0.95]].forEach(([n, h], i) => {
+        const f = figure(n, h); f.root.position.set(10.3, 0, -2.5 + i * 1.6); world.add(f.root);
+      });
+
+      this.updaters = updaters; this.strollers = strollers;
+
+      // 갤러리 (시작 장소)
+      buildGallery(scene);
+
+      this.camWorld = new THREE.Vector3();
+      this.tmp = new THREE.Vector3();
+    },
+    tick(time, dt) {
+      const t = time / 1000;
+      for (let i = 0; i < this.updaters.length; i++) this.updaters[i](t, dt);
+      this.strollers.forEach((s, i) => {
+        const a = s.a + t * s.sp * (12 / s.r);
+        const x = s.cx + Math.cos(a) * s.r, z = s.cz + Math.sin(a) * s.r * 0.7;
+        s.k.root.position.set(x, 0, z);
+        hop(s.k, t + i, 5, 0.04);
+      });
+      // 라벨: 머리를 향해 돌고, 가까우면 설명판
+      const cam = this.el.camera; if (!cam) return;
+      cam.getWorldPosition(this.camWorld);
+      updateFigures(this.camWorld);
+      stations.forEach(s => {
+        const dx = this.camWorld.x - s.x, dz = this.camWorld.z - s.z;
+        const d = Math.hypot(dx, dz), yaw = Math.atan2(dx, dz);
+        const near = d < 5.5;
+        s.panel.visible = labelsOn && near; s.tag.visible = labelsOn && !near && d < 40;
+        s.panel.rotation.y = s.tag.rotation.y = yaw;
+        s.panel.position.y = near ? Math.max(1.9, this.camWorld.y + 0.55) : 2.55;
+      });
+    },
+  });
+
+  /* ---------- 갤러리 ---------- */
+  const GALLERY_Z = 200;
+  function buildGallery(scene) {
+    const room = new THREE.Group(); room.position.set(0, 0, GALLERY_Z); scene.add(room);
+    const wallM = new THREE.MeshLambertMaterial({ color: 0x5a1f1f, side: THREE.BackSide });
+    const box = new THREE.Mesh(new THREE.BoxGeometry(12, 5, 12), wallM); box.position.y = 2.5; room.add(box);
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(12, 12).rotateX(-Math.PI / 2), mat(0x6b5038)); floor.position.y = 0.01; room.add(floor);
+    const lamp = new THREE.PointLight(0xfff0d0, 9, 16, 1.2); lamp.position.set(0, 4, -2); room.add(lamp);
+    // 바닥 순간이동
+    const floorEl = document.createElement('a-entity');
+    floorEl.setAttribute('class', 'clickable teleport');
+    floorEl.setAttribute('geometry', 'primitive: plane; width: 11.5; height: 11.5');
+    floorEl.setAttribute('material', 'visible: false');
+    floorEl.setAttribute('rotation', '-90 0 0');
+    floorEl.setAttribute('position', `0 0.02 ${GALLERY_Z}`);
+    floorEl.addEventListener('click', e => { if (!window.__dragged && e.detail.intersection) { const p = e.detail.intersection.point; teleportTo(p.x, p.z, null); } });
+    document.querySelector('a-scene').appendChild(floorEl);
+
+    // 그림 액자 (A-Frame 엔티티: 클릭 가능)
+    const W = 4.4, H = W * 118 / 161;
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(W + 0.36, H + 0.36, 0.12), mat(0x7a5426));
+    frame.position.set(0, 2.25, -5.9); room.add(frame);
+    const pEl = document.createElement('a-entity');
+    pEl.setAttribute('class', 'clickable');
+    pEl.setAttribute('geometry', `primitive: plane; width: ${W}; height: ${H}`);
+    pEl.setAttribute('material', 'shader: flat; color: #b8955e');
+    pEl.setAttribute('position', `0 2.25 ${GALLERY_Z - 5.83}`);
+    pEl.addEventListener('click', () => enterPainting(0));
+    document.querySelector('a-scene').appendChild(pEl);
+    pEl.addEventListener('loaded', () => {
+      loadPainting((tex, real) => {
+        const m = pEl.getObject3D('mesh');
+        if (m) { m.material.map = tex; m.material.color.set(0xffffff); m.material.needsUpdate = true; }
+        paintingTex = tex;
+        if (easelMat) { easelMat.map = tex; easelMat.color.set(0xffffff); easelMat.needsUpdate = true; }
+      });
+    });
+
+    // 작품 라벨
+    const c = document.createElement('canvas'); c.width = 1024; c.height = 420;
+    const x = c.getContext('2d');
+    const draw = () => {
+      x.fillStyle = '#efe4cc'; x.fillRect(0, 0, 1024, 420);
+      x.fillStyle = '#2b2118'; x.font = '700 64px "Gowun Batang", serif'; x.fillText('아이들의 놀이', 50, 100);
+      x.font = '400 36px "Noto Sans KR", sans-serif'; x.fillStyle = '#6d5a45';
+      x.fillText('피터르 브뤼헐(父) · 1560 · 패널에 유채 · 118 × 161 cm', 50, 165);
+      x.fillStyle = '#3d3024'; x.font = '400 36px "Noto Sans KR", sans-serif';
+      x.fillText('광장에서 230명이 넘는 아이들이 80가지 넘는 놀이를 하고 있어요.', 50, 240);
+      x.fillStyle = '#9b3f2a'; x.font = '700 42px "Noto Sans KR", sans-serif';
+      x.fillText('▶ 그림을 가리키고 트리거를 당기면 그림 속으로 들어가요', 50, 340);
+    };
+    draw();
+    const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+    const card = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9 * 420 / 1024), new THREE.MeshBasicMaterial({ map: tex }));
+    card.position.set(3.4, 1.15, -5.88); room.add(card);
+    document.fonts && document.fonts.ready.then(() => { draw(); tex.needsUpdate = true; });
+
+    // 광장 입구의 이젤 (지금 그림 속에 있다는 것을 알려 줌)
+    const easel = new THREE.Group();
+    easelMat = new THREE.MeshBasicMaterial({ color: 0xb8955e });
+    const canvasM = new THREE.Mesh(new THREE.PlaneGeometry(1.3, 1.3 * 118 / 161), easelMat); canvasM.position.set(0, 1.55, 0.04); easel.add(canvasM);
+    easel.add(mesh(new THREE.BoxGeometry(1.42, 1.07, 0.06), 0x7a5426, 0, 1.55, 0));
+    [-0.5, 0.5].forEach(xx => { const l = stick(1.9, PAL.wood, 0.03); l.position.set(xx, 0.95, 0.15); l.rotation.x = -0.12; easel.add(l); });
+    easel.position.set(-3.4, 0, 6.8); easel.rotation.y = 0.5; scene.add(easel);
+  }
+  let paintingTex = null, easelMat = null;
+
+  /* ---------- 이동 ---------- */
+  const rigEl = () => document.getElementById('rig');
+  const headEl = () => document.getElementById('head');
+
+  function teleportTo(x, z, lookAt) {
+    const rig = rigEl().object3D, head = headEl().object3D;
+    if (lookAt) {
+      const want = Math.atan2(-(lookAt[0] - x), -(lookAt[1] - z));
+      const headYaw = new THREE.Euler().setFromQuaternion(head.quaternion, 'YXZ').y;
+      rig.rotation.y = want - headYaw;
+      // 데스크톱: look-controls가 머리 회전을 관리하므로 그쪽도 맞춰 준다
+      const lc = headEl().components['look-controls'];
+      if (lc && !AFRAME.scenes[0].is('vr-mode')) { rig.rotation.y = 0; lc.yawObject.rotation.y = want; lc.pitchObject.rotation.x = -0.12; }
+    }
+    // 머리 위치가 (x, z)에 오도록 리그를 옮김
+    rig.updateMatrixWorld(true);
+    const hw = new THREE.Vector3(); head.getWorldPosition(hw);
+    rig.position.x += x - hw.x; rig.position.z += z - hw.z;
+  }
+
+  let current = -1;
+  function goStation(i) {
+    current = (i + GAMES.length) % GAMES.length;
+    const g = GAMES[current];
+    // 스테이션에서 광장 중심(시작점) 쪽으로 3.6m 떨어진 곳에 서서 바라봄
+    let dx = 0 - g.pos[0], dz = 8 - g.pos[1];
+    const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+    const r = g.id === 'swim' ? 7 : g.id === 'tree' ? 5 : 3.8;
+    fade(() => teleportTo(g.pos[0] + dx * r, g.pos[1] + dz * r, [g.pos[0], g.pos[1]]));
+    toast(`${current + 1}. ${g.name}`);
+  }
+  function enterPainting() {
+    fade(() => teleportTo(0, 9.5, [0, 0]));
+    current = -1;
+    toast('그림 속 광장에 들어왔어요 · A 버튼 / N 키로 놀이를 하나씩 둘러보세요');
+  }
+  function toGallery() { fade(() => teleportTo(0, GALLERY_Z + 3.2, [0, GALLERY_Z - 6])); toast('갤러리'); }
+
+  /* 화면 페이드 */
+  let fadeState = null;
+  AFRAME.registerComponent('fader', {
+    init() {
+      this.m = new THREE.Mesh(new THREE.SphereGeometry(0.25, 12, 8), new THREE.MeshBasicMaterial({ color: 0x1d1712, side: THREE.BackSide, transparent: true, opacity: 0, depthTest: false, fog: false }));
+      this.m.renderOrder = 999; this.el.setObject3D('mesh', this.m);
+    },
+    tick(t, dt) {
+      if (!fadeState) { this.m.visible = false; return; }
+      this.m.visible = true;
+      fadeState.t += dt;
+      const half = 220;
+      if (fadeState.t < half) this.m.material.opacity = fadeState.t / half;
+      else {
+        if (!fadeState.done) { fadeState.done = true; fadeState.cb(); }
+        this.m.material.opacity = Math.max(0, 1 - (fadeState.t - half) / half);
+        if (fadeState.t > half * 2) fadeState = null;
+      }
+    },
+  });
+  function fade(cb) {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return cb();
+    fadeState = { t: 0, cb, done: false };
+  }
+
+  /* 컨트롤러: 스틱 이동, 스냅 회전, 버튼 */
+  AFRAME.registerComponent('stick-locomotion', {
+    init() {
+      this.move = { x: 0, y: 0 }; this.turnReady = true;
+      const L = document.getElementById('leftHand'), R = document.getElementById('rightHand');
+      L.addEventListener('thumbstickmoved', e => { this.move.x = e.detail.x; this.move.y = e.detail.y; });
+      R.addEventListener('thumbstickmoved', e => {
+        const x = e.detail.x;
+        if (Math.abs(x) < 0.3) { this.turnReady = true; return; }
+        if (this.turnReady && Math.abs(x) > 0.75) { this.turnReady = false; this.snap(x > 0 ? -1 : 1); }
+      });
+      R.addEventListener('abuttondown', () => goStation(current + 1));
+      R.addEventListener('bbuttondown', () => goStation(current - 1));
+      L.addEventListener('xbuttondown', toGallery);
+      L.addEventListener('ybuttondown', () => { labelsOn = !labelsOn; toast(labelsOn ? '설명 켜짐' : '설명 꺼짐'); });
+      this.v = new THREE.Vector3(); this.q = new THREE.Quaternion();
+    },
+    snap(dir) {
+      const rig = this.el.object3D, head = document.getElementById('head').object3D;
+      const before = new THREE.Vector3(); head.getWorldPosition(before);
+      rig.rotation.y += dir * Math.PI / 6; rig.updateMatrixWorld(true);
+      const after = new THREE.Vector3(); head.getWorldPosition(after);
+      rig.position.x += before.x - after.x; rig.position.z += before.z - after.z;
+    },
+    tick(t, dt) {
+      const { x, y } = this.move;
+      if (Math.abs(x) < 0.15 && Math.abs(y) < 0.15) return;
+      const head = document.getElementById('head').object3D;
+      head.getWorldQuaternion(this.q);
+      const yaw = new THREE.Euler().setFromQuaternion(this.q, 'YXZ').y;
+      const sp = 1.8 * dt / 1000;
+      const fx = -Math.sin(yaw), fz = -Math.cos(yaw);
+      const rx = Math.cos(yaw), rz = -Math.sin(yaw);
+      this.el.object3D.position.x += (fx * -y + rx * x) * sp;
+      this.el.object3D.position.z += (fz * -y + rz * x) * sp;
+    },
+  });
+
+  /* PC: 드래그와 클릭 구분, 키보드 */
+  let downAt = null;
+  window.addEventListener('pointerdown', e => { downAt = [e.clientX, e.clientY]; window.__dragged = false; }, true);
+  window.addEventListener('pointermove', e => { if (downAt && Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6) window.__dragged = true; }, true);
+  window.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT') return;
+    const k = e.key.toLowerCase();
+    if (k === 'n') goStation(current + 1);
+    else if (k === 'p') goStation(current - 1);
+    else if (k === 'g') toGallery();
+    else if (k === 'l') labelsOn = !labelsOn;
+  });
+
+  /* 안내 카드 */
+  let toastTimer;
+  function toast(msg) {
+    const el = document.getElementById('toast'); el.textContent = msg; el.classList.add('show');
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3200);
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+  const guide = document.getElementById('guide');
+  document.getElementById('btnEnter').onclick = () => { enterPainting(); };
+  document.getElementById('btnNext').onclick = () => goStation(current + 1);
+  document.getElementById('btnClose').onclick = () => guide.classList.add('closed');
+  document.getElementById('toggleGuide').onclick = () => guide.classList.remove('closed');
+  document.querySelector('a-scene').addEventListener('enter-vr', () => guide.classList.add('closed'));
+
+  // 시작: 갤러리에서 그림을 바라보게
+  const sc = document.querySelector('a-scene');
+  const start = () => setTimeout(() => teleportTo(0, GALLERY_Z + 3.2, [0, GALLERY_Z - 6]), 50);
+  if (sc.hasLoaded) start(); else sc.addEventListener('loaded', start);
+  if (document.fonts) document.fonts.ready.then(() => redraws.forEach(f => f()));
+  });
+})();
+</script>
+<style>
+  /* 레이아웃: 전체 화면 3D 장면 위에 박물관 작품 라벨 같은 안내 카드 하나 */
+  :root {
+    --ink: #2b2118;          /* 브뤼헐의 짙은 갈색 */
+    --paper: #efe4cc;        /* 바랜 패널 바탕 */
+    --ochre: #c08a2e;        /* 광장 흙빛 */
+    --brick: #9b3f2a;        /* 시청 벽돌 */
+    --muted: #6d5a45;
+    --display: "Gowun Batang", "Nanum Myeongjo", "Batang", serif;
+    --body: "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+    color-scheme: light;
+  }
+  html, body { height: 100%; margin: 0; background: #1d1712; color: var(--ink); font-family: var(--body); }
+  #guide {
+    position: fixed; z-index: 10;
+    left: max(16px, env(safe-area-inset-left, 0px));
+    top: calc(16px + env(safe-area-inset-top, 0px));
+    width: min(380px, calc(100vw - 32px));
+    max-height: calc(100% - 120px); overflow: auto;
+    background: var(--paper); border: 1px solid #b9a27c;
+    box-shadow: 0 10px 30px rgba(0,0,0,.35);
+    padding: 18px 20px 16px; box-sizing: border-box;
+  }
+  #guide .eyebrow { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--brick); font-weight: 600; }
+  #guide h1 { font-family: var(--display); font-weight: 700; font-size: 26px; line-height: 1.2; margin: 6px 0 2px; text-wrap: balance; }
+  #guide .meta { font-family: var(--display); font-size: 14px; color: var(--muted); margin-bottom: 12px; }
+  #guide p { font-size: 13.5px; line-height: 1.65; margin: 0 0 10px; }
+  #guide dl { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; margin: 0 0 12px; }
+  #guide dt { font-weight: 600; color: var(--brick); white-space: nowrap; }
+  #guide dd { margin: 0; }
+  #guide h2 { font-family: var(--display); font-size: 15px; margin: 12px 0 6px; border-top: 1px solid #cdb995; padding-top: 10px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    font: 600 13px var(--body); padding: 9px 14px; cursor: pointer;
+    background: var(--ink); color: var(--paper); border: 0;
+  }
+  button.ghost { background: transparent; color: var(--ink); border: 1px solid var(--ink); }
+  button:focus-visible { outline: 3px solid var(--ochre); outline-offset: 2px; }
+  #toggleGuide {
+    position: fixed; z-index: 11; display: none;
+    left: max(16px, env(safe-area-inset-left, 0px));
+    top: calc(16px + env(safe-area-inset-top, 0px));
+  }
+  #guide.closed { display: none; }
+  #guide.closed + #toggleGuide { display: block; }
+  #toast {
+    position: fixed; z-index: 12; left: 50%; bottom: calc(28px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%); background: rgba(43,33,24,.92); color: var(--paper);
+    font-family: var(--display); font-size: 17px; padding: 10px 18px; pointer-events: none;
+    opacity: 0; transition: opacity .4s; max-width: calc(100vw - 32px); text-align: center;
+  }
+  #toast.show { opacity: 1; }
+  .a-enter-vr-button { width: 92px !important; height: 52px !important; }
+  @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+</head>
+<body>
+
+<aside id="guide" aria-label="안내">
+  <div class="eyebrow">WebXR · Meta Quest 3</div>
+  <h1>브뤼헐의 놀이터</h1>
+  <div class="meta">피터르 브뤼헐(父), 〈아이들의 놀이〉, 1560 · 빈 미술사 박물관</div>
+  <p>갤러리에 걸린 그림을 누르면 그림 속 광장으로 들어갑니다. 16세기 플랑드르 아이들이 굴렁쇠를 굴리고, 죽마를 타고, 말타기를 하며 노는 모습을 바로 곁에서 볼 수 있어요.</p>
+  <h2>퀘스트 3 컨트롤러</h2>
+  <dl>
+    <dt>트리거</dt><dd>바닥을 가리켜 순간이동 · 그림/표지판 선택</dd>
+    <dt>왼쪽 스틱</dt><dd>걷기</dd>
+    <dt>오른쪽 스틱</dt><dd>30° 회전</dd>
+    <dt>A / B</dt><dd>다음 / 이전 놀이로 이동</dd>
+    <dt>X</dt><dd>갤러리로 돌아가기</dd>
+    <dt>Y</dt><dd>설명 패널 켜기/끄기</dd>
+  </dl>
+  <h2>PC 브라우저</h2>
+  <dl>
+    <dt>드래그</dt><dd>둘러보기</dd>
+    <dt>W A S D</dt><dd>걷기</dd>
+    <dt>클릭</dt><dd>바닥 순간이동 · 그림 선택</dd>
+    <dt>N / P</dt><dd>다음 / 이전 놀이</dd>
+    <dt>G</dt><dd>갤러리</dd>
+  </dl>
+  <div class="row">
+    <button id="btnEnter" type="button">그림 속으로</button>
+    <button id="btnNext" type="button" class="ghost">다음 놀이 ▶</button>
+    <button id="btnClose" type="button" class="ghost">안내 닫기</button>
+  </div>
+</aside>
+<button id="toggleGuide" type="button">안내 보기</button>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<a-scene
+  renderer="antialias: true; colorManagement: true; foveationLevel: 1; highRefreshRate: true"
+  fog="type: linear; color: #d6d3c4; near: 35; far: 110"
+  background="color: #d6d3c4"
+  webxr="optionalFeatures: local-floor, bounded-floor"
+  vr-mode-ui="enabled: true"
+  loading-screen="dotsColor: #c08a2e; backgroundColor: #1d1712"
+  bruegel-world>
+
+  <!-- 하늘과 빛 -->
+  <a-sky color="#cdd5cf"></a-sky>
+  <a-entity light="type: hemisphere; color: #fff6e0; groundColor: #8a7350; intensity: 1.55"></a-entity>
+  <a-entity light="type: directional; color: #fff1d6; intensity: 1.5" position="-6 12 8"></a-entity>
+
+  <!-- 광장 바닥 (순간이동 대상) -->
+  <a-entity id="ground" class="clickable teleport" ground-surface></a-entity>
+
+  <!-- 플레이어 -->
+  <a-entity id="rig" position="0 0 203.2" stick-locomotion>
+    <a-entity id="head" camera position="0 1.6 0" look-controls="pointerLockEnabled: false" wasd-controls="acceleration: 28">
+      <a-entity id="fader" fader></a-entity>
+    </a-entity>
+    <a-entity id="leftHand" laser-controls="hand: left" raycaster="objects: .clickable; far: 40; lineColor: #f2d48a; lineOpacity: 0.7"></a-entity>
+    <a-entity id="rightHand" laser-controls="hand: right" raycaster="objects: .clickable; far: 40; lineColor: #f2d48a; lineOpacity: 0.7"></a-entity>
+  </a-entity>
+
+  <!-- PC 마우스용 커서 -->
+  <a-entity cursor="rayOrigin: mouse; fuse: false" raycaster="objects: .clickable; far: 60"></a-entity>
+</a-scene>
+
+</body>
+</html>
